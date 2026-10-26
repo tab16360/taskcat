@@ -4,7 +4,7 @@
 
 记事喵是原生 macOS 菜单栏待办工具，支持自然语言新增、改期、分组与完成任务，以及手动编辑和多模型配置。基础任务复用系统提醒事项的存储、iCloud同步和通知，微信为可选入口。
 
-[介绍站点](https://tab16360.github.io/taskcat/) · [早期预览版](https://github.com/tab16360/taskcat/releases/tag/v0.2.1-preview.1) · [反馈问题](https://github.com/tab16360/taskcat/issues)
+[介绍站点](https://tab16360.github.io/taskcat/) · [早期预览版](https://github.com/tab16360/taskcat/releases/tag/v0.2.6-preview.1) · [反馈问题](https://github.com/tab16360/taskcat/issues)
 
 ## 此仓库当前包含什么
 
@@ -16,10 +16,11 @@
 
 - macOS 14+，Apple Silicon已在开发机实测；Intel和其他系统版本尚未验收。
 - 无独立iOS App；可通过所选iCloud账户的系统提醒事项，在iPhone查看基础任务、编辑与接收系统通知。
-- 状态、进度、回收站与操作日志目前为Mac本机数据；支持备份，但尚无生产级多Mac扩展数据自动同步。
+- 状态、进度、回收站与操作日志保存在Mac本机，可选用自己的iCloud Drive在两台Mac间同步（预览实现，真实冲突会暂停修改）；支持备份导出。
 - 云模型需自备服务和Key，费用由所选模型服务收取；本地模型需自行运行。
 - 核心预览包不包含第三方微信SDK。微信桥接为可选开发者接入，固定适配版本的第三方许可信息尚未明确，当前不在此处分发。
-- 临时签名、未经过Apple公证；跨构建更新可能重新确认提醒事项和Keychain权限。无需关闭系统安全功能。
+- 0.2.6起可在设置中检查并安装更新：只接受本仓库Release，安装前校验SHA-256、代码签名与应用标识，旧版本保留备份。0.2.5及更早版本需手动更新一次。
+- 临时签名、未经过Apple公证；跨构建更新可能重新确认提醒事项权限。无需关闭系统安全功能。
 - AI理解可能出错，修改前请核对确认；不承诺生产级稳定性。
 
 请勿在Issue里发送个人任务、API Key、Bark Key、二维码、微信会话或原始数据库。可提供版本、macOS版本、脱敏复现步骤与截图。

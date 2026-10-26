@@ -2,10 +2,13 @@
   const $ = id => document.getElementById(id);
   const input = $('demo-input'), send = $('demo-send');
   const tasks = [
-    {title:'整理周会分享材料',meta:'工作 · 明天 10:00',done:false},
-    {title:'看一看周末的展览',meta:'生活 · 周六 14:00',done:false},
-    {title:'给猫咪补充口粮',meta:'收件箱',done:false}
+    {title:'整理周会分享材料',group:'工作',when:'明天 10:00',bucket:'tomorrow',progress:40,done:false},
+    {title:'看一看周末的展览',group:'生活',when:'周六 14:00',bucket:'week',done:false},
+    {title:'给猫咪补充口粮',group:'收件箱',when:'',bucket:'none',done:false}
   ];
+  // Mirrors the app's timeline: due-date buckets in a fixed order, empty ones skipped.
+  const buckets=[['overdue','已逾期'],['today','今天'],['tomorrow','明天'],['week','7 天内'],['later','以后'],['none','未定时间']];
+  const meta=task=>task.group+(task.when?' · '+task.when:'');
   let busy = false;
   let signalTimer;
   const motionDelay=ms=>new Promise(resolve=>setTimeout(resolve,matchMedia('(prefers-reduced-motion: reduce)').matches?0:ms));
@@ -19,22 +22,34 @@
     complete: {input:'猫粮买好了，标记完成', feedback:'已完成「给猫咪补充口粮」。又少一件惦记的事。'}
   };
   const update = () => {send.disabled = busy || wxBusy || !input.value.trim();};
-  const render = changed => {
-    $('demo-tasks').replaceChildren(...tasks.map((task,i) => {
-      const row = document.createElement('div');row.className = `task${task.done?' done':''}${i===changed?' changed':''}`;
-      const check = document.createElement('span');check.className='task-check';
-      const content = document.createElement('div'), title = document.createElement('strong'), meta = document.createElement('small');
-      title.textContent=task.title;meta.textContent=task.meta;content.append(title,meta);
-      const status = document.createElement('span');status.className='status';status.textContent=task.done?'已完成':'待办';
-      row.append(check,content,status);
+  const el=(tag,className,text)=>{const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=text;return node;};
+  const taskRow = (task,i,changed) => {
+      const row = el('div',`task${task.done?' done':''}${i===changed?' changed':''}${task.progress&&!task.done?' doing':''}`);row.dataset.index=i;
+      const check = el('span','task-check');
+      if(task.progress&&!task.done)check.style.setProperty('--p',task.progress);
+      const content = el('div'), title = el('strong','',task.title), info = el('small');
+      if(task.when){const due=el('span',`due ${task.bucket}`,task.when);info.append(due);}
+      const group=el('span','group',task.group);group.dataset.group=task.group;info.append(group,el('span','number','#'+(i+1)));
+      content.append(title,info);
+      row.append(check,content);
+      if(task.progress&&!task.done)row.append(el('span','status',`进行中 ${task.progress}%`));
       check.setAttribute('role','button');check.setAttribute('tabindex','0');check.setAttribute('aria-label',(task.done?'重新打开：':'完成：')+task.title);
       const toggle=()=>{if(busy || wxBusy)return;task.done=!task.done;render(i);signal('Mac 面板已更新 · 微信查询可看到变化');$('demo-feedback').textContent='已在 Mac 演示面板'+(task.done?'完成':'重新打开')+'「'+task.title+'」';};
       check.addEventListener('click',toggle);check.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();toggle();}});
       return row;
-    }));
+  };
+  const render = changed => {
+    const nodes=[];
+    buckets.forEach(([key,label])=>{
+      const members=tasks.map((task,i)=>({task,i})).filter(item=>item.task.bucket===key);
+      if(!members.length)return;
+      const head=el('div',`task-section ${key}`);head.append(el('span','',label),el('b','',String(members.length)));
+      nodes.push(head,...members.map(({task,i})=>taskRow(task,i,changed)));
+    });
+    $('demo-tasks').replaceChildren(...nodes);
     $('demo-count').textContent=tasks.filter(t=>!t.done).length;
     if(Number.isInteger(changed))requestAnimationFrame(()=>{
-      const list=$('demo-tasks'),row=list.children[changed];if(!row)return;
+      const list=$('demo-tasks'),row=list.querySelector(`[data-index="${changed}"]`);if(!row)return;
       const bounds=list.getBoundingClientRect(),target=row.getBoundingClientRect();
       if(target.bottom>bounds.bottom)list.scrollTop+=target.bottom-bounds.bottom;
       else if(target.top<bounds.top)list.scrollTop-=bounds.top-target.top;
@@ -47,8 +62,8 @@
     if($('composer').hidden){$('composer').hidden=false;$('collapse').setAttribute('aria-expanded','true');$('collapse').textContent='⌃';}
     await new Promise(resolve=>setTimeout(resolve,matchMedia('(prefers-reduced-motion: reduce)').matches?0:850));
     let changed=0;
-    if(key==='add'){changed=tasks.findIndex(t=>t.title==='读书');if(changed<0){tasks.push({title:'读书',meta:'收件箱 · 明天 20:00',done:false});changed=tasks.length-1;}}
-    if(key==='reschedule')tasks[0].meta='工作 · 周五 15:00';
+    if(key==='add'){changed=tasks.findIndex(t=>t.title==='读书');if(changed<0){tasks.push({title:'读书',group:'收件箱',when:'明天 20:00',bucket:'tomorrow',done:false});changed=tasks.length-1;}}
+    if(key==='reschedule')Object.assign(tasks[0],{when:'周五 15:00',bucket:'week'});
     if(key==='complete'){tasks[2].done=true;changed=2;}
     render(changed);$('thinking').hidden=true;$('demo-feedback').textContent=example.feedback;input.value='';busy=false;update();signal('Mac 面板已更新 · 微信查询可看到变化');
   }
@@ -74,7 +89,7 @@
   }
   function listText() {
     const active=tasks.map((task,index)=>({task,number:index+1})).filter(item=>!item.task.done);
-    return `当前有 ${active.length} 个待办\n\n`+active.map(({task,number})=>`${number}、${task.title}\n   ${task.meta}`).join('\n\n')+`\n\n回复「任务编号 + 操作」，如：任务${active[0]?.number ?? 1}标记完成。`;
+    return `当前有 ${active.length} 个待办\n\n`+active.map(({task,number})=>`${number}、${task.title}\n   ${meta(task)}`).join('\n\n')+`\n\n回复「任务编号 + 操作」，如：任务${active[0]?.number ?? 1}标记完成。`;
   }
   function setPending(value) {
     wxPending=value;$('wx-confirm').hidden=!value;
@@ -96,8 +111,8 @@
       else if(confirmation[1]==='取消'){setPending(null);reply='已取消，示例任务未修改。';}
       else {
         const pending=wxPending;let index=pending.index;
-        if(pending.kind==='add'){index=tasks.length;tasks.push({title:'读书',meta:'收件箱 · 明天 20:00',done:false});reply=`已新增任务${index+1}\n\n读书\n明天 20:00（演示时间）`;}
-        else if(pending.kind==='reschedule'){tasks[index].meta='工作 · 周五 15:00';reply=`已调整任务${index+1}\n\n${tasks[index].title}\n周五 15:00（演示时间）`;}
+        if(pending.kind==='add'){index=tasks.length;tasks.push({title:'读书',group:'收件箱',when:'明天 20:00',bucket:'tomorrow',done:false});reply=`已新增任务${index+1}\n\n读书\n明天 20:00（演示时间）`;}
+        else if(pending.kind==='reschedule'){Object.assign(tasks[index],{when:'周五 15:00',bucket:'week'});reply=`已调整任务${index+1}\n\n${tasks[index].title}\n周五 15:00（演示时间）`;}
         else {tasks[index].done=true;reply=`已完成任务${index+1}\n\n${tasks[index].title}\n已完成`;}
         setPending(null);render(index);signal('微信操作已确认 · Mac 待办同步更新');$('demo-feedback').textContent='来自微信的操作已更新同一份示例待办。';
       }
