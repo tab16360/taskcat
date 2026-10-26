@@ -4,7 +4,7 @@
 
 记事喵是原生 macOS 菜单栏待办工具，支持自然语言新增、改期、分组与完成任务，以及手动编辑和多模型配置。基础任务复用系统提醒事项的存储、iCloud同步和通知，微信为可选入口。
 
-[介绍站点](https://tab16360.github.io/taskcat/) · [早期预览版](https://github.com/tab16360/taskcat/releases/tag/v0.2.7-preview.1) · [反馈问题](https://github.com/tab16360/taskcat/issues)
+[介绍站点](https://tab16360.github.io/taskcat/) · [早期预览版](https://github.com/tab16360/taskcat/releases/tag/v0.2.8-preview.1) · [反馈问题](https://github.com/tab16360/taskcat/issues)
 
 ## 此仓库当前包含什么
 
