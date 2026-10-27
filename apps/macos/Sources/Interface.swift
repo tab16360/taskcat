@@ -294,7 +294,8 @@ struct HousekeeperView:View {
                     Button("返回待办"){service.showCompleted=false;service.showTrash=false;service.taskLens = .active}.buttonStyle(.plain).foregroundStyle(palette.accent)
                 }.font(.system(size:10)).foregroundStyle(palette.muted)
             }
-            LazyVStack(alignment:.leading,spacing:8) {
+            // Ticks each minute so due buckets and relative labels move on time (e.g. today → overdue).
+            TimelineView(.everyMinute){context in LazyVStack(alignment:.leading,spacing:8) {
                 if service.visibleTasks.isEmpty {
                     VStack(spacing:10) {
                         Image(systemName:service.showTrash ? "trash" : "checkmark.seal").font(.system(size:28,weight:.ultraLight)).foregroundStyle(palette.accent)
@@ -302,7 +303,7 @@ struct HousekeeperView:View {
                         Text("在上方说一句话，开始安排下一件事。").font(.system(size:10)).foregroundStyle(palette.muted)
                     }.frame(maxWidth:.infinity).padding(.vertical,30).consoleCard(radius:20)
                 }
-                let now=Date()
+                let now=context.date
                 if usesTimeline {
                     ForEach(TaskBoard.timeline(displayedTasks,now:now),id:\.bucket){section in
                         timelineHeader(section.bucket,count:section.tasks.count)
@@ -311,7 +312,7 @@ struct HousekeeperView:View {
                 } else {
                     ForEach(displayedTasks){task in TaskRow(task:task,service:service,now:now)}
                 }
-            }.animation(reduceMotion ? nil : .spring(response:0.32,dampingFraction:0.88),value:service.visibleTasks.map(\.id))
+            }.animation(reduceMotion ? nil : .spring(response:0.32,dampingFraction:0.88),value:service.visibleTasks.map(\.id))}
         }
     }
     private var onboarding:some View {
@@ -357,6 +358,8 @@ struct HousekeeperView:View {
 }
 
 final class RowInteraction:ObservableObject {@Published var hovered=false}
+// Row controls stay enabled while background sync holds busy (every 12 s); the service
+// actions wait for it to finish instead of dimming and swallowing the click.
 struct TaskRow:View {
     let task:ManagedTask
     @ObservedObject var service:TaskService
@@ -377,11 +380,11 @@ struct TaskRow:View {
     var body:some View {
         HStack(alignment:.center,spacing:12) {
             if task.softDeleted {
-                Button("恢复"){Task{await service.restore(task)}}.font(.system(size:11)).disabled(service.busy || task.conflicted)
+                Button("恢复"){Task{await service.restore(task)}}.font(.system(size:11)).disabled(task.conflicted)
             } else {
                 Button{Task{await service.complete(task)}}label:{
                     CheckRing(progress:task.progress,completed:task.completed,tone:statusTone,hovered:hovered,palette:palette).frame(width:30,height:30).contentShape(Circle())
-                }.buttonStyle(.plain).disabled(service.busy || task.conflicted).help(task.completed ? "任务已完成" : "完成任务").accessibilityLabel("完成任务：\(task.title)")
+                }.buttonStyle(.plain).disabled(task.conflicted).help(task.completed ? "任务已完成" : "完成任务").accessibilityLabel("完成任务：\(task.title)")
             }
             Button{service.beginEdit(task)}label:{
                 VStack(alignment:.leading,spacing:7) {
@@ -392,7 +395,7 @@ struct TaskRow:View {
                     }.font(.system(size:11)).foregroundStyle(palette.muted)
                     if task.conflicted {Label("待核对",systemImage:"exclamationmark.triangle").font(.system(size:10)).foregroundStyle(palette.warning)}
                 }.frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
-            }.buttonStyle(.plain).disabled(service.busy || task.conflicted || task.softDeleted).help("编辑任务").accessibilityLabel("\(service.number(for:task))、\(task.title)")
+            }.buttonStyle(.plain).disabled(task.conflicted || task.softDeleted).help("编辑任务").accessibilityLabel("\(service.number(for:task))、\(task.title)")
             HStack(spacing:4) {
                 if task.softDeleted || task.status == "doing" || task.status == "waiting" || task.status == "cancelled" {statusPill}
                 Menu {
@@ -404,7 +407,7 @@ struct TaskRow:View {
                         Button("移入回收站",role:.destructive){service.destructiveAction = .deleteTask(task)}
                     }
                 } label:{Image(systemName:"ellipsis").frame(width:26,height:28).contentShape(Rectangle())}.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                    .opacity(hovered ? 1 : 0.45).disabled(service.busy || task.conflicted).help("任务操作")
+                    .opacity(hovered ? 1 : 0.45).disabled(task.conflicted).help("任务操作")
             }.fixedSize(horizontal:true,vertical:false)
         }.padding(.leading,14).padding(.trailing,10).padding(.vertical,12)
             .overlay(alignment:.leading) {

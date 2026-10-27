@@ -29,8 +29,10 @@ final class UpdateService:ObservableObject {
     private var progressPanel:NSPanel?
     private var progressLabel:NSTextField?
     private var cancelButton:NSButton?
-    /// Set by the app: never quit in the middle of a task write or backup restore.
+    /// Set by the app: a task write in progress; install waits for it to finish.
     var isBusy:()->Bool = {false}
+    /// Set by the app: a lasting state that rules out updating, e.g. an unfinished backup restore.
+    var blocker:()->String? = {nil}
     init(defaults:UserDefaults = .standard,bundle:Bundle = .main) {
         self.defaults=defaults
         autoCheck=defaults.object(forKey:Keys.autoCheck) as? Bool ?? true
@@ -98,8 +100,10 @@ final class UpdateService:ObservableObject {
         guard case .available(let c)=phase else{return}
         phase = .downloading(c)
         do {
-            staged=try await Self.prepare(c,target:Bundle.main.bundleURL,currentVersion:currentVersion,currentBuild:currentBuild)
-            phase = .ready(c)
+            let result=try await Self.prepare(c,target:Bundle.main.bundleURL,currentVersion:currentVersion,currentBuild:currentBuild)
+            // Verification and staging run as plain processes and ignore cancellation; honour it here.
+            if Task.isCancelled {try? FileManager.default.removeItem(at:result);phase = .available(c);return}
+            staged=result;phase = .ready(c)
         } catch {
             phase=Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled ? .available(c) : .failed(error.localizedDescription)
         }
@@ -115,6 +119,7 @@ final class UpdateService:ObservableObject {
         alert.addButton(withTitle:"安装并重启");alert.addButton(withTitle:"稍后")
         guard alert.runModal() == .alertFirstButtonReturn else {defaults.set(c.tag,forKey:Keys.postponed);return}
         defaults.removeObject(forKey:Keys.postponed)
+        if let reason=blocker() {message("暂时不能更新",reason);return}
         if case .ready=phase {install();return}
         showProgress("正在下载并校验 \(c.version.description)…")
         downloadTask=Task {
@@ -127,11 +132,13 @@ final class UpdateService:ObservableObject {
             }
         }
     }
-    func install() {
+    func install(waited:Int=0) {
         guard case .ready(let candidate)=phase,let staged else{return}
+        if let reason=blocker() {closeProgress();message("暂时不能更新",reason);return}
         if isBusy() {
-            // Let the current task write or restore finish, then quit.
-            DispatchQueue.main.asyncAfter(deadline:.now()+1){[weak self] in self?.install()};return
+            // Let the current task write finish, then quit; give up rather than spin forever.
+            guard waited<30 else {closeProgress();message("暂时不能更新","记事喵正在处理任务，请稍后从菜单栏右键选择「检查更新…」重试。");return}
+            DispatchQueue.main.asyncAfter(deadline:.now()+1){[weak self] in self?.install(waited:waited+1)};return
         }
         do {
             try AppPaths.prepare()

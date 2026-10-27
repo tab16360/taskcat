@@ -471,7 +471,7 @@ final class TaskService: ObservableObject {
         return nil
     }
     func beginEdit(_ task:ManagedTask) {
-        guard !task.conflicted,!busy else{return}
+        guard !task.conflicted else{return}
         editingTask=task;editTitle=task.title;editNotes=task.notes;editGroup=task.group.rawValue
         editStatus=task.status;editHasProgress=task.progress != nil;editProgress=Double(max(10,min(100,Int((Double(task.progress ?? 10)/10).rounded())*10)))
         editHasDue=task.dueAt != nil;editDue=task.dueAt ?? Date();editorPresented=true
@@ -479,7 +479,8 @@ final class TaskService: ObservableObject {
     func saveEdit(markComplete:Bool=false) async {
         if editHasProgress && editProgress==100 && editStatus != "done" && !markComplete {progressCompletionPresented=true;return}
         if markComplete {editStatus="done"}
-        guard let before=editingTask,!busy else{return}
+        guard let before=editingTask else{return}
+        guard await waitUntilIdle() else{errorMessage=Self.busyNotice;return}
         busy=true;errorMessage=nil;processingStage="正在保存任务";defer{busy=false;processingStage=""}
         do {
             var r=RequestRecord(id:UUID().uuidString.lowercased(),source:"menu",text:"手动编辑任务",createdAt:ISO8601DateFormatter().string(from:Date()))
@@ -501,7 +502,8 @@ final class TaskService: ObservableObject {
     }
     func manualAdd() async {
         let title=inputText.trimmingCharacters(in:.whitespacesAndNewlines)
-        guard !busy,isConnected,!title.isEmpty else{return}
+        guard isConnected,!title.isEmpty else{return}
+        guard await waitUntilIdle() else{errorMessage=Self.busyNotice;return}
         busy=true;defer{busy=false}
         do {
             try await reload()
@@ -512,11 +514,18 @@ final class TaskService: ObservableObject {
             r.targetId=r.id;try saveRecord(r);try await apply(&r,recovery:false);inputText=""
         } catch {errorMessage=error.localizedDescription}
     }
+    static let busyNotice="正在同步任务，请稍后再试。"
+    /// Background sync holds busy for a moment every 12 s; a click waits it out instead of being dropped.
+    func waitUntilIdle(seconds:Double=3) async->Bool {
+        var waited=0.0
+        while busy && waited<seconds {try? await Task.sleep(nanoseconds:100_000_000);waited+=0.1}
+        return !busy
+    }
     func restore(_ task:ManagedTask) async { await manualAction(task,intent:"restore_task",text:"恢复回收站任务") }
     func complete(_ task:ManagedTask) async { await manualAction(task,intent:task.completed ? "reopen_task" : "complete_task",text:task.completed ? "重新打开任务" : "手动标记完成") }
     func manualAction(_ task:ManagedTask,intent:String,text:String) async {
         // Manual checkbox uses the same durable execution path without spending a model request.
-        guard !busy else{return};busy=true;errorMessage=nil;defer{busy=false}
+        guard await waitUntilIdle() else{errorMessage=Self.busyNotice;return};busy=true;errorMessage=nil;defer{busy=false}
         var r=RequestRecord(id:UUID().uuidString.lowercased(),source:"menu",text:text,createdAt:ISO8601DateFormatter().string(from:Date()))
         r.command=TaskCommand(operationId:r.id,intent:intent,taskId:task.id,patch:[:],dateText:nil,requiresConfirmation:false)
         r.targetId=task.id;r.beforeTask=task;r.targetFingerprint=task.fingerprint

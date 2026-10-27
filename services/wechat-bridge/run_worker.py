@@ -28,6 +28,15 @@ def status(state,**extra):
 
 class WorkerAlreadyRunning(RuntimeError):pass
 
+# Messages of these types describe the environment (missing package, path, socket), never
+# user content; anything else is logged by type and code location only.
+SAFE_DETAIL=(ImportError,OSError)
+def report_failure(exc):
+    import traceback
+    frames=' <- '.join(f'{Path(f.filename).name}:{f.lineno} {f.name}' for f in reversed(traceback.extract_tb(exc.__traceback__)[-4:]))
+    detail=': '+str(exc).splitlines()[0][:200] if isinstance(exc,SAFE_DETAIL) and str(exc) else ''
+    print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} worker stopped: {type(exc).__name__}{detail} at {frames}",file=sys.stderr,flush=True)
+
 async def wait_for_owner_exit(pid):
     while os.getppid()==pid:await asyncio.sleep(1)
 
@@ -171,4 +180,4 @@ if __name__=='__main__':
     try:sys.exit(asyncio.run(supervise(a)) or 0)
     except WorkerAlreadyRunning:sys.exit(3) # Never overwrite the active owner's status.
     except KeyboardInterrupt:status('stopped')
-    except Exception as exc:status('blocked',error_type=type(exc).__name__);sys.exit(2)
+    except Exception as exc:report_failure(exc);status('blocked',error_type=type(exc).__name__);sys.exit(2)

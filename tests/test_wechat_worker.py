@@ -3,6 +3,8 @@ import importlib.util,json,os,socket,threading,uuid,tempfile
 from pathlib import Path
 import pytest
 ROOT=Path(__file__).resolve().parents[1]
+# The third-party SDK is optional and not distributed; CI runs without it.
+needs_sdk=pytest.mark.skipif(importlib.util.find_spec('wechat_clawbot_sdk') is None,reason='optional WeChat SDK not installed')
 
 @pytest.fixture
 def worker(tmp_path,monkeypatch):
@@ -70,6 +72,7 @@ def test_expired_session_never_becomes_a_successful_batch(worker):
     assert code==-14 and cursor=='UNCHANGED' and messages==[]
 
 
+@needs_sdk
 def test_plain_reply_preserves_numbered_paragraphs_without_sdk_markdown(worker):
     import asyncio
     from types import SimpleNamespace
@@ -85,6 +88,7 @@ def test_plain_reply_preserves_numbered_paragraphs_without_sdk_markdown(worker):
     assert sent[0][1]['msg']['item_list'][0]['text_item']['text']==text
 
 
+@needs_sdk
 def test_reply_rejection_is_not_acknowledged_as_success(worker):
     import asyncio
     from types import SimpleNamespace
@@ -139,6 +143,7 @@ def test_missing_owner_does_not_start_worker(worker,monkeypatch):
     assert asyncio.run(worker.supervise(SimpleNamespace(parent_pid=-1)))==0
 
 
+@needs_sdk
 def test_lock_loser_cli_does_not_corrupt_live_worker_status(tmp_path):
     import subprocess,sys,fcntl
     runtime=tmp_path/'.tasksecretary/runtime';runtime.mkdir(parents=True)
@@ -164,3 +169,14 @@ def test_worker_environment_drops_only_socks_all_proxy(tmp_path):
     result=subprocess.run(['swiftc','-parse-as-library','-swift-version','5',str(ROOT/'apps/macos/Sources/WeChatEnvironment.swift'),str(main),'-o',str(binary)],capture_output=True,text=True,timeout=90)
     assert result.returncode==0,result.stderr
     assert subprocess.check_output([str(binary)],text=True).strip()=='HOME,https_proxy http://127.0.0.1:7897'
+
+def test_failure_is_logged_with_type_and_location(tmp_path):
+    import subprocess,sys
+    # -S hides site-packages, so the worker's lazy `import httpx` fails like a broken runtime would.
+    result=subprocess.run([sys.executable,'-S',str(ROOT/'services/wechat-bridge/run_worker.py'),'--old-owner-stopped'],
+        env={'HOME':str(tmp_path),'PATH':'/usr/bin:/bin'},capture_output=True,text=True,timeout=20)
+    assert result.returncode==2
+    line=result.stderr.strip().splitlines()[-1]
+    assert 'worker stopped: ModuleNotFoundError' in line and "No module named 'httpx'" in line and 'run_worker.py:' in line
+    status=json.loads((tmp_path/'.tasksecretary/wechat/status.json').read_text())
+    assert status['state']=='blocked' and status['error_type']=='ModuleNotFoundError'

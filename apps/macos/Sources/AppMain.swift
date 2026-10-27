@@ -47,7 +47,8 @@ final class AppDelegate:NSObject,NSApplicationDelegate {
         }
         let loginLaunch=NSAppleEventManager.shared().currentAppleEvent?.paramDescriptor(forKeyword:keyAEPropData)?.enumCodeValue == keyAELaunchedAsLogInItem
         if !CommandLine.arguments.contains("--background") && !loginLaunch { openMainWindow() }
-        UpdateService.shared.isBusy={[weak self] in self?.service.busy == true || self?.service.restorePending == true}
+        UpdateService.shared.isBusy={[weak self] in self?.service.busy == true}
+        UpdateService.shared.blocker={[weak self] in self?.service.restorePending == true ? "有一次备份恢复尚未完成。请先在设置的「数据与恢复」中继续恢复，再安装更新。" : nil}
         UpdateService.shared.start()
     }
     @objc func statusItemActivated() {
