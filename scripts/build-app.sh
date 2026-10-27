@@ -21,9 +21,17 @@ swiftc -parse-as-library -swift-version 5 -target "$(uname -m)-apple-macosx14.0"
   poc/metadata-journal/OperationJournal.swift apps/macos/Sources/*.swift \
   -o "$app_bundle/Contents/MacOS/TaskCat"
 rm -f "$app_bundle/Contents/Resources/development-project-path.txt"
+# A stable certificate keeps the designated requirement identical across builds, so macOS
+# keeps Reminders access after updates. Ad-hoc signatures change with every build.
+local_keychain="$HOME/Library/Keychains/taskcat-signing.keychain-db"
+local_password="$HOME/Library/Application Support/TaskCatSigning/keychain-password"
 if [[ -n "${TASKCAT_SIGNING_IDENTITY:-}" ]]; then
   codesign --force --options runtime --timestamp --sign "$TASKCAT_SIGNING_IDENTITY" "$app_bundle"
+elif [[ -f "$local_keychain" && -f "$local_password" ]]; then
+  security unlock-keychain -p "$(cat "$local_password")" "$local_keychain"
+  codesign --force --keychain "$local_keychain" --sign "TaskCat Local Code Signing" "$app_bundle"
 else
+  printf 'warning: no signing certificate; ad-hoc build will lose Reminders access after updates\n' >&2
   codesign --force --sign - "$app_bundle"
 fi
 codesign --verify --strict "$app_bundle"

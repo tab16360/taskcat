@@ -216,8 +216,11 @@ final class UpdateService:ObservableObject {
             throw UpdateError("安装包版本不高于当前版本，已停止更新")
         }
         try run("/usr/bin/codesign",["--verify","--strict","--deep",app.path],"安装包签名校验失败")
-        // A Developer ID build only accepts updates signed by the same team.
-        if let team=teamIdentifier(target),team != teamIdentifier(app) {throw UpdateError("安装包签名身份与当前版本不一致")}
+        // A certificate-signed install only accepts updates that meet its own designated
+        // requirement, i.e. signed with the same certificate. Ad-hoc installs have none to keep.
+        if let requirement=designatedRequirement(target),requirement.contains("certificate") {
+            try run("/usr/bin/codesign",["--verify","--strict","-R="+requirement,app.path],"安装包签名与当前版本不一致，已停止更新")
+        }
         let staged=parent.appendingPathComponent(".TaskCat-update-\(UUID().uuidString).app")
         try run("/usr/bin/ditto",[app.path,staged.path],"无法暂存新版本")
         do {try run("/usr/bin/codesign",["--verify","--strict","--deep",staged.path],"暂存版本签名校验失败")}
@@ -230,12 +233,12 @@ final class UpdateService:ObservableObject {
         try process.run();process.waitUntilExit()
         guard process.terminationStatus == 0 else{throw UpdateError(failure)}
     }
-    nonisolated private static func teamIdentifier(_ app:URL)->String? {
+    nonisolated static func designatedRequirement(_ app:URL)->String? {
         let process=Process(),pipe=Pipe();process.executableURL=URL(fileURLWithPath:"/usr/bin/codesign")
-        process.arguments=["-dv","--verbose=2",app.path];process.standardError=pipe;process.standardOutput=FileHandle.nullDevice
+        process.arguments=["-d","-r-",app.path];process.standardOutput=pipe;process.standardError=pipe
         guard (try? process.run()) != nil else{return nil}
         let text=String(decoding:pipe.fileHandleForReading.readDataToEndOfFile(),as:UTF8.self);process.waitUntilExit()
-        return text.split(whereSeparator:\.isNewline).first{$0.hasPrefix("TeamIdentifier=")}
-            .map{String($0.dropFirst("TeamIdentifier=".count))}.flatMap{$0 == "not set" ? nil : $0}
+        guard process.terminationStatus == 0 else{return nil}
+        return text.split(whereSeparator:\.isNewline).first{$0.hasPrefix("designated => ")}.map{String($0.dropFirst("designated => ".count))}
     }
 }
