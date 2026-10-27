@@ -1,0 +1,88 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "operationId",
+    "intent",
+    "taskId",
+    "patch",
+    "dateText",
+    "requiresConfirmation"
+  ],
+  "properties": {
+    "operationId": {
+      "type": "string"
+    },
+    "intent": {
+      "type": "string",
+      "enum": [
+        "create_task",
+        "update_task",
+        "complete_task",
+        "reopen_task",
+        "query_tasks",
+        "move_task",
+        "delete_task",
+        "clarify",
+        "create_group",
+        "query_groups",
+        "rename_group",
+        "delete_group"
+      ]
+    },
+    "taskId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "patch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "todo",
+            "doing",
+            "waiting",
+            "done",
+            "cancelled"
+          ]
+        },
+        "progress": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "groupId": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "newGroupId": {
+          "type": "string",
+          "maxLength": 40
+        }
+      }
+    },
+    "dateText": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "requiresConfirmation": {
+      "type": "boolean"
+    }
+  }
+}
