@@ -72,6 +72,7 @@ final class AppDelegate:NSObject,NSApplicationDelegate {
     }
     @objc func openPopover() {
         guard !popover.isShown,let button=statusItem.button else{return}
+        service.activeSurface="popover"
         popover.show(relativeTo:button.bounds,of:button,preferredEdge:.minY)
         NSApp.activate(ignoringOtherApps:true)
     }
@@ -89,6 +90,7 @@ final class AppDelegate:NSObject,NSApplicationDelegate {
     }
     func openMainWindow() {
         popover?.performClose(nil)
+        service.activeSurface="window"
         if window==nil {
             let w=NSWindow(contentRect:NSRect(x:0,y:0,width:540,height:660),styleMask:[.titled,.closable,.miniaturizable,.resizable,.fullSizeContentView],backing:.buffered,defer:false)
             w.title="记事喵";w.isReleasedWhenClosed=false;w.minSize=NSSize(width:520,height:500)

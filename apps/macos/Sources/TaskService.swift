@@ -52,6 +52,10 @@ final class TaskService: ObservableObject {
     @Published var tasks:[ManagedTask]=[]
     @Published var isConnected=false
     @Published var busy=false
+    /// True while the periodic sync refresh holds `busy`. It still excludes concurrent writes,
+    /// but the UI ignores it so controls don't dim every 12 seconds.
+    @Published private(set) var backgroundSyncing=false
+    var uiBusy:Bool {busy && !backgroundSyncing}
     // Storage work also holds busy; only a submitted conversation may replace the input UI.
     var conversationProcessing:Bool {busy && !processingInput.isEmpty}
     @Published var message="一句话，安排好接下来的事。"
@@ -62,6 +66,8 @@ final class TaskService: ObservableObject {
     @Published var showCompleted=false
     @Published var showTrash=false
     @Published var settingsPresented=false
+    /// "popover" or "window": the surface the user last used; only it presents sheets and alerts.
+    @Published var activeSurface="popover"
     @Published var preferences=ModelPreferences()
     @Published var sourceChoices:[(id:String,title:String)]=[]
     @Published var syncNote="任务由系统提醒事项管理；扩展数据先在本机持久保存。"
@@ -79,6 +85,7 @@ final class TaskService: ObservableObject {
     var actorID=""
     private var refreshObserver:NSObjectProtocol?
     private var ipc:LocalCommandServer?
+    private var lastArchive=Date.distantPast
 
     init() {
         do {
@@ -121,6 +128,7 @@ final class TaskService: ObservableObject {
             metadataSyncEnabled=FileManager.default.fileExists(atPath:AppPaths.root.appendingPathComponent("metadata-sync.json").path)
             try await reload()
             try await recover()
+            archiveOldRequests()
             startReminderScheduler()
             startMetadataTimer()
             if UserDefaults.standard.bool(forKey:"TaskSecretary.wechatAutoConnect") && UserDefaults.standard.bool(forKey:"TaskSecretary.confirmedSingleOwner") {
@@ -130,7 +138,11 @@ final class TaskService: ObservableObject {
         } catch { errorMessage=error.localizedDescription }
     }
     func savePreferences() throws {try AppPaths.write(preferences,to:AppPaths.preferences);try saveExperiencePreferences() }
-    func refresh() async {guard !busy,isConnected else{return};busy=true;defer{busy=false};do { try await reload() } catch { errorMessage=error.localizedDescription } }
+    func refresh(background:Bool=false) async {
+        guard !busy,isConnected else{return}
+        busy=true;backgroundSyncing=background;defer{busy=false;backgroundSyncing=false}
+        do { try await reload() } catch { errorMessage=error.localizedDescription }
+    }
     func reload() async throws {
         await syncMetadata()
         try reminders.refreshGroups()
@@ -168,13 +180,40 @@ final class TaskService: ObservableObject {
     private func recordURL(_ id:String)->URL { AppPaths.requests.appendingPathComponent(id+".json") }
     func loadRecord(_ id:String)throws->RequestRecord? {
         guard MetadataOperation.isID(id) else { throw AppFailure.message("请求ID无效。") }
-        let file=recordURL(id)
-        guard FileManager.default.fileExists(atPath:file.path) else { return nil }
-        return try JSONDecoder().decode(RequestRecord.self,from:Data(contentsOf:file))
+        // Archived records still answer by ID, so a late WeChat retry is never executed twice.
+        for file in [recordURL(id),AppPaths.requestArchive.appendingPathComponent(id+".json")] where FileManager.default.fileExists(atPath:file.path) {
+            return try JSONDecoder().decode(RequestRecord.self,from:Data(contentsOf:file))
+        }
+        return nil
+    }
+    private func nextConfirmationNumber(source:String)throws->Int {
+        let stored=(try? JSONDecoder().decode([String:Int].self,from:Data(contentsOf:AppPaths.confirmationCounters))) ?? [:]
+        let current=try allRecords().filter{$0.source==source}.compactMap(\.confirmationNumber).max() ?? 0
+        return max(stored[source] ?? 0,current)+1
+    }
+    /// Moves old finished records out of the scanned folder; runs at connect and at most hourly.
+    func archiveOldRequests(now:Date=Date()) {
+        lastArchive=now
+        let fm=FileManager.default
+        guard let files=try? fm.contentsOfDirectory(at:AppPaths.requests,includingPropertiesForKeys:nil).filter({$0.pathExtension=="json"}),
+              files.count>RequestRetention.keepRecent else{return}
+        let items=files.compactMap{file->RequestRetention.Item? in
+            guard let r=try? JSONDecoder().decode(RequestRecord.self,from:Data(contentsOf:file)) else{return nil}
+            return RequestRetention.Item(id:r.id,phase:r.phase,createdAt:r.createdAt,source:r.source,confirmationNumber:r.confirmationNumber)
+        }
+        let ids=RequestRetention.archivable(items,now:now)
+        guard !ids.isEmpty else{return}
+        do {
+            // Record the numbers first: once archived they no longer count towards the next one.
+            let stored=(try? JSONDecoder().decode([String:Int].self,from:Data(contentsOf:AppPaths.confirmationCounters))) ?? [:]
+            try AppPaths.write(RequestRetention.counters(items,merging:stored),to:AppPaths.confirmationCounters)
+            for id in ids {try fm.moveItem(at:recordURL(id),to:AppPaths.requestArchive.appendingPathComponent(id+".json"))}
+        } catch {dataNotice="整理旧请求记录未完成："+error.localizedDescription}
     }
     func saveRecord(_ record:RequestRecord)throws { try AppPaths.write(record,to:recordURL(record.id)) }
     func submit(_ text:String,source:String="menu",id:String=UUID().uuidString.lowercased()) async -> ServiceResult {
         let result=await execute(text,source:source,id:id)
+        if Date().timeIntervalSince(lastArchive)>3600 {archiveOldRequests()}
         if result.status != "busy" {
             let record=try? loadRecord(id)
             let changesTask=(ConversationRules.confirmation(text) != nil && result.status=="applied") || ["create_task","update_task","complete_task","reopen_task","delete_task","move_task"].contains(record?.command?.intent ?? "")
@@ -191,7 +230,7 @@ final class TaskService: ObservableObject {
             return await handleConfirmationText(input,source:source,id:id)
         }
         guard MetadataOperation.isID(id),!input.isEmpty,input.count<=2000 else { return ServiceResult(ok:false,status:"rejected",message:"请输入1到2000字的任务描述。",requestId:id) }
-        if busy { return ServiceResult(ok:false,status:"busy",message:"正在处理上一条，请稍后重试。",requestId:id) }
+        if !(await waitUntilIdle()) { return ServiceResult(ok:false,status:"busy",message:"正在处理上一条，请稍后重试。",requestId:id) }
         if let control=modelControl(input,id:id,source:source) {return control}
         guard isConnected else { return ServiceResult(ok:false,status:"rejected",message:"请先在菜单栏连接提醒事项。",requestId:id) }
         busy=true;errorMessage=nil;processingInput=input;processingStage="正在读取任务与上下文";defer{busy=false;processingStage="";processingInput=""}
@@ -245,8 +284,7 @@ final class TaskService: ObservableObject {
             record!.targetFingerprint=record!.beforeTask?.fingerprint
             if let date=command.dateText { record!.dueAt=DateSuggestion.date(for:date) }
             if command.requiresConfirmation {
-                let prior=try allRecords().filter{$0.source==source}.compactMap(\.confirmationNumber)
-                record!.confirmationNumber=(prior.max() ?? 0)+1
+                record!.confirmationNumber=try nextConfirmationNumber(source:source)
                 record!.phase="awaiting_confirmation"
                 let reply=confirmationMessage(record!)
                 record!.reply=reply;try saveRecord(record!);pending=record;pendingDate=record!.dueAt ?? Date();pendingDateChecked=record!.dueAt != nil
@@ -355,7 +393,7 @@ final class TaskService: ObservableObject {
         if c.intent=="restore_task" {try? TaskTrashStore(directory:AppPaths.trash).remove(targetID)}
     }
     func confirmPending() async {
-        guard var r=pending,!busy else { return }
+        guard await waitUntilIdle(),var r=pending else { return }
         if r.command?.dateText != nil,r.dueAt==nil,!pendingDateChecked {errorMessage="日期尚不明确，请先选择具体截止时间。";return}
         busy=true;errorMessage=nil;defer{busy=false}
         do {
@@ -370,7 +408,7 @@ final class TaskService: ObservableObject {
         guard var r=pending else{return};r.phase="cancelled";r.reply="已取消，未修改任务。";try? saveRecord(r);pending=nil;message=r.reply!
     }
     private func handleConfirmationText(_ text:String,source:String,id:String) async -> ServiceResult {
-        guard !busy else { return ServiceResult(ok:false,status:"busy",message:"正在处理，请稍后重试。",requestId:id) }
+        guard await waitUntilIdle() else { return ServiceResult(ok:false,status:"busy",message:"正在处理，请稍后重试。",requestId:id) }
         guard let confirmation=ConversationRules.confirmation(text) else{return ServiceResult(ok:false,status:"rejected",message:"请回复“确认1”或“取消1”。",requestId:id)}
         do {
             if let receipt=try loadRecord(id),["applied","cancelled"].contains(receipt.phase) {
@@ -405,7 +443,7 @@ final class TaskService: ObservableObject {
                 catch { errorMessage="有一项操作待核对："+error.localizedDescription }
             } else if record.phase=="awaiting_confirmation" {
                 if record.confirmationNumber==nil {
-                    record.confirmationNumber=(try allRecords().filter{$0.source==record.source}.compactMap(\.confirmationNumber).max() ?? 0)+1
+                    record.confirmationNumber=try nextConfirmationNumber(source:record.source)
                     record.reply=confirmationMessage(record);try saveRecord(record)
                 }
                 pending=record;pendingDate=record.dueAt ?? Date();pendingDateChecked=record.dueAt != nil

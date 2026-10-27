@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct HousekeeperView:View {
     @ObservedObject var service:TaskService
@@ -11,7 +12,7 @@ struct HousekeeperView:View {
     @ObservedObject private var updates=UpdateService.shared
     var isPopover=false
     var openWindow:()->Void
-    private var canSend:Bool {!service.busy && !service.restorePending && service.isConnected && !service.inputText.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty}
+    private var canSend:Bool {!service.uiBusy && !service.restorePending && service.isConnected && !service.inputText.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty}
     var body:some View {
         GlassFamily { VStack(spacing:0) {
             header
@@ -40,15 +41,23 @@ struct HousekeeperView:View {
         }.padding(.bottom,8)}.frame(minWidth:500,minHeight:440)
             .onChange(of:taskScope){_ in service.tasksExpanded=false}
             .background(SurfaceVisibility(motion:motion).frame(width:0,height:0))
+            .background(KeySurfaceTracker{[surface] in if service.activeSurface != surface {service.activeSurface=surface}}.frame(width:0,height:0))
             .themeScope(appearance.selected).environment(\.timeZone,TimeZone.current)
-            .sheet(isPresented:$service.settingsPresented){SettingsView(service:service)}
-            .sheet(isPresented:$service.editorPresented){TaskEditorView(service:service)}
-            .sheet(isPresented:$service.groupsPresented){GroupManagementView(service:service)}
-            .alert(service.destructiveAction?.title ?? "确认操作",isPresented:Binding(get:{if case .deleteGroup=service.destructiveAction{return false};return service.destructiveAction != nil},set:{if !$0{service.destructiveAction=nil}})) {
+            .sheet(isPresented:onSurface(\.settingsPresented)){SettingsView(service:service)}
+            .sheet(isPresented:onSurface(\.editorPresented)){TaskEditorView(service:service)}
+            .sheet(isPresented:onSurface(\.groupsPresented)){GroupManagementView(service:service)}
+            .alert(service.destructiveAction?.title ?? "确认操作",isPresented:Binding(get:{if case .deleteGroup=service.destructiveAction{return false};return service.destructiveAction != nil && service.activeSurface == surface},set:{if !$0{service.destructiveAction=nil}})) {
                 Button("取消",role:.cancel){service.destructiveAction=nil}
                 Button("确认",role:.destructive){if let action=service.destructiveAction {Task{await service.runDestructiveAction(action)}}}
             } message:{Text(service.destructiveAction?.detail ?? "")}
 
+    }
+    // Popover and window both host this view and share the service's presentation flags.
+    // Only the surface the user last used presents them; otherwise the hidden copy attaches
+    // the same sheet to its own invisible window, which also makes macOS refuse to quit.
+    private var surface:String {isPopover ? "popover" : "window"}
+    private func onSurface(_ flag:ReferenceWritableKeyPath<TaskService,Bool>)->Binding<Bool> {
+        Binding(get:{service[keyPath:flag] && service.activeSurface == surface},set:{service[keyPath:flag]=$0})
     }
     private func choose(_ lens:TaskLens) {
         withAnimation(reduceMotion ? nil : .easeInOut(duration:0.18)) {
@@ -289,7 +298,7 @@ struct HousekeeperView:View {
                 HStack(spacing:6) {
                     Image(systemName:service.showTrash ? "trash" : "checkmark.circle")
                     Text(service.showTrash ? "正在查看回收站" : "全部任务 · 含已完成与已取消")
-                    if service.showTrash {Button("清空回收站"){service.destructiveAction = .emptyTrash(service.tasks.filter{$0.softDeleted})}.foregroundStyle(palette.warning).disabled(service.tasks.filter{$0.softDeleted}.isEmpty || service.busy)}
+                    if service.showTrash {Button("清空回收站"){service.destructiveAction = .emptyTrash(service.tasks.filter{$0.softDeleted})}.foregroundStyle(palette.warning).disabled(service.tasks.filter{$0.softDeleted}.isEmpty || service.uiBusy)}
                     Spacer()
                     Button("返回待办"){service.showCompleted=false;service.showTrash=false;service.taskLens = .active}.buttonStyle(.plain).foregroundStyle(palette.accent)
                 }.font(.system(size:10)).foregroundStyle(palette.muted)
@@ -320,7 +329,7 @@ struct HousekeeperView:View {
             Image(systemName:"tray.and.arrow.down").font(.system(size:27,weight:.light)).foregroundStyle(palette.accent)
             Text("连接你的提醒事项").font(.system(size:16,weight:.semibold))
             Text("在菜单栏安排好每一件事。").font(.system(size:12)).foregroundStyle(palette.muted)
-            Button("授权并连接"){Task{await service.connect()}}.buttonStyle(ConsoleButton(prominent:true)).disabled(service.busy)
+            Button("授权并连接"){Task{await service.connect()}}.buttonStyle(ConsoleButton(prominent:true)).disabled(service.uiBusy)
         }.frame(maxWidth:.infinity).padding(.vertical,28).consoleCard()
     }
     private func confirmation(_ pending:RequestRecord)->some View {
@@ -336,11 +345,11 @@ struct HousekeeperView:View {
                     DatePicker("截止时间",selection:Binding(get:{service.pendingDate},set:{service.pendingDate=$0;service.pendingDateChecked=true})).labelsHidden()
                 }
             }
-            HStack{Button("取消"){service.cancelPending()};Spacer();Button("确认处理"){Task{await service.confirmPending()}}.buttonStyle(ConsoleButton(prominent:true))}.buttonStyle(ConsoleButton()).disabled(service.busy)
+            HStack{Button("取消"){service.cancelPending()};Spacer();Button("确认处理"){Task{await service.confirmPending()}}.buttonStyle(ConsoleButton(prominent:true))}.buttonStyle(ConsoleButton()).disabled(service.uiBusy)
         }.padding(16).consoleCard().overlay(RoundedRectangle(cornerRadius:16).strokeBorder(palette.accent.opacity(0.25)))
     }
     private func send() {
-        let text=service.inputText.trimmingCharacters(in:.whitespacesAndNewlines);guard !text.isEmpty,!service.busy else{return}
+        let text=service.inputText.trimmingCharacters(in:.whitespacesAndNewlines);guard !text.isEmpty,!service.uiBusy else{return}
         service.inputText="";Task{let result=await service.submit(text);if !result.ok && service.inputText.isEmpty {service.inputText=text}}
     }
     private func patchText(_ command:TaskCommand)->String {
@@ -354,6 +363,27 @@ struct HousekeeperView:View {
             case .flag(let b):return "\(label)：\(b ? "是" : "否")"
             }
         }.joined(separator:" · ")
+    }
+}
+
+/// Reports when the hosting window becomes key, i.e. the user starts using that surface.
+struct KeySurfaceTracker:NSViewRepresentable {
+    let onKey:()->Void
+    func makeNSView(context:Context)->TrackerView {TrackerView(onKey:onKey)}
+    func updateNSView(_ view:TrackerView,context:Context) {view.onKey=onKey}
+    final class TrackerView:NSView {
+        var onKey:()->Void
+        private var observer:NSObjectProtocol?
+        init(onKey:@escaping()->Void) {self.onKey=onKey;super.init(frame:.zero)}
+        required init?(coder:NSCoder){fatalError("init(coder:) has not been implemented")}
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let observer {NotificationCenter.default.removeObserver(observer)};observer=nil
+            guard let window else{return}
+            observer=NotificationCenter.default.addObserver(forName:NSWindow.didBecomeKeyNotification,object:window,queue:.main){[weak self] _ in self?.onKey()}
+            if window.isKeyWindow {DispatchQueue.main.async{[weak self] in self?.onKey()}}
+        }
+        deinit {if let observer {NotificationCenter.default.removeObserver(observer)}}
     }
 }
 
@@ -502,7 +532,7 @@ struct SettingsView:View {
                             Button("移除配置"){service.removeProfile()}.disabled((service.preferences.profiles?.count ?? 0)<=1)
                             Spacer()
                             Button("保存此模型"){do{try service.saveProfile()}catch{service.settingsNotice=error.localizedDescription}}
-                        }.buttonStyle(ConsoleButton()).disabled(service.busy)
+                        }.buttonStyle(ConsoleButton()).disabled(service.uiBusy)
                         field("配置名称",text:$service.profileNameDraft)
                         Picker("模型来源",selection:$service.preferences.provider){Text("云端 · OpenAI 兼容").tag("cloud");Text("本地 · Ollama / 兼容服务").tag("local")}
                         if service.preferences.provider == "cloud" {
@@ -541,7 +571,7 @@ struct SettingsView:View {
                             HStack {
                                 Button("以此机初始化双机同步"){Task{await service.configureMetadataSync(create:true)}}
                                 Button("加入已有双机同步"){Task{await service.configureMetadataSync(create:false)}}
-                            }.buttonStyle(ConsoleButton()).disabled(service.busy || !service.isConnected)
+                            }.buttonStyle(ConsoleButton()).disabled(service.uiBusy || !service.isConnected)
                         }
                         Text("扩展日志、编号与回收快照存入自己的 iCloud Drive；Key 不参与同步。新设备先在主设备初始化，再加入。离线新增使用不同编号段；真正冲突仍暂停修改。云端历史快照如同旧备份，彻底删除任务不会擦除既有历史文件。").font(.system(size:10)).foregroundStyle(palette.muted)
                     }.padding(18).consoleCard()
@@ -550,12 +580,12 @@ struct SettingsView:View {
                         HStack {
                             Button("导出备份"){Task{await service.exportBackup()}}
                             Button("恢复备份"){service.chooseBackup()}
-                        }.buttonStyle(ConsoleButton()).disabled(service.busy || !service.isConnected || service.restorePending)
-                        if service.restorePending {Button("继续未完成的恢复"){Task{await service.continueBackupRestore()}}.buttonStyle(ConsoleButton(prominent:true)).disabled(service.busy)}
+                        }.buttonStyle(ConsoleButton()).disabled(service.uiBusy || !service.isConnected || service.restorePending)
+                        if service.restorePending {Button("继续未完成的恢复"){Task{await service.continueBackupRestore()}}.buttonStyle(ConsoleButton(prominent:true)).disabled(service.uiBusy)}
                         HStack {
                             Button("同步历史回收站"){Task{await service.repairLegacyTrash()}}
                             Button("补齐系统提醒"){Task{await service.repairFutureAlarms()}}
-                        }.buttonStyle(ConsoleButton()).disabled(service.busy || !service.isConnected || service.restorePending)
+                        }.buttonStyle(ConsoleButton()).disabled(service.uiBusy || !service.isConnected || service.restorePending)
                         Text("历史回收站修复会先保存恢复快照，再移除系统中的对应提醒。补齐提醒只处理未来到期且没有闹钟的未完成任务。备份含私密任务内容，不含 Key 或微信会话；扩展数据目前保存在本机，换机前请导出。").font(.system(size:10)).foregroundStyle(palette.muted)
                         Text(service.dataNotice).font(.system(size:11)).foregroundStyle(palette.accent).textSelection(.enabled)
                     }.padding(18).consoleCard()
@@ -603,7 +633,7 @@ struct TaskEditorView:View {
     private var palette:ThemePalette {ThemePalette(theme:appearance.selected)}
     var body:some View {
         GlassFamily { VStack(alignment:.leading,spacing:16) {
-            HStack {Text("编辑任务").font(.system(size:17,weight:.semibold));Spacer();Button("取消"){service.editorPresented=false}.buttonStyle(ConsoleButton());Button("保存"){Task{await service.saveEdit()}}.buttonStyle(ConsoleButton(prominent:true)).disabled(service.busy)}
+            HStack {Text("编辑任务").font(.system(size:17,weight:.semibold));Spacer();Button("取消"){service.editorPresented=false}.buttonStyle(ConsoleButton());Button("保存"){Task{await service.saveEdit()}}.buttonStyle(ConsoleButton(prominent:true)).disabled(service.uiBusy)}
             ScrollView {
                 VStack(alignment:.leading,spacing:15) {
                     TextField("任务标题",text:$service.editTitle,axis:.vertical).font(.system(size:15)).lineLimit(1...3).textFieldStyle(.plain).padding(12).consoleCard(radius:10)
@@ -634,7 +664,7 @@ struct GroupManagementView:View {
         GlassFamily { VStack(alignment:.leading,spacing:15) {
             HStack{Text("分组管理").font(.system(size:17,weight:.semibold));Spacer();Button("完成"){service.groupsPresented=false}.buttonStyle(ConsoleButton(prominent:true))}
             Text("按项目或主题自动分类。删除分组会保留任务，并移至收件箱。").font(.system(size:11)).foregroundStyle(palette.muted)
-            HStack{TextField("新分组名称",text:$service.groupDraft).textFieldStyle(.roundedBorder).onSubmit{Task{await service.createGroup()}};Button("创建"){Task{await service.createGroup()}}.buttonStyle(ConsoleButton()).disabled(service.busy || service.groupDraft.trimmingCharacters(in:.whitespaces).isEmpty)}
+            HStack{TextField("新分组名称",text:$service.groupDraft).textFieldStyle(.roundedBorder).onSubmit{Task{await service.createGroup()}};Button("创建"){Task{await service.createGroup()}}.buttonStyle(ConsoleButton()).disabled(service.uiBusy || service.groupDraft.trimmingCharacters(in:.whitespaces).isEmpty)}
             ScrollView {
                 VStack(alignment:.leading,spacing:9) {
                     ForEach(service.groups){group in
@@ -652,7 +682,7 @@ struct GroupManagementView:View {
                                     Button("删除",role:.destructive){service.destructiveAction = .deleteGroup(group)}.buttonStyle(.plain)
                                 }
                             }
-                        }.font(.system(size:12)).padding(10).consoleCard(radius:10).disabled(service.busy)
+                        }.font(.system(size:12)).padding(10).consoleCard(radius:10).disabled(service.uiBusy)
                     }
                 }
             }

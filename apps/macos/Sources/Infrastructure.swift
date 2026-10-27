@@ -7,11 +7,13 @@ struct AppPaths {
     static let root = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/TaskSecretary")
     static let operations = root.appendingPathComponent("operations")
     static let requests = root.appendingPathComponent("requests")
+    static let requestArchive = root.appendingPathComponent("requests-archive")
+    static let confirmationCounters = root.appendingPathComponent("confirmation-counters.json")
     static let trash = root.appendingPathComponent("trash")
     static let preferences = root.appendingPathComponent("preferences.json")
     static let runtime = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".tasksecretary/runtime")
     static func prepare() throws {
-        for url in [root,operations,requests,trash,runtime] {
+        for url in [root,operations,requests,requestArchive,trash,runtime] {
             try FileManager.default.createDirectory(at:url,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
         }
     }

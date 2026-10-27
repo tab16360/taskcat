@@ -10,7 +10,7 @@ extension TaskService {
     func startMetadataTimer() {
         metadataTimer?.invalidate()
         metadataTimer=Timer.scheduledTimer(withTimeInterval:12,repeats:true){[weak self] _ in
-            Task { @MainActor in guard let self,self.metadataSyncEnabled,!self.busy else{return};await self.refresh() }
+            Task { @MainActor in guard let self,self.metadataSyncEnabled,!self.busy else{return};await self.refresh(background:true) }
         }
     }
     func configureMetadataSync(create:Bool) async {
