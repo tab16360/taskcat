@@ -60,6 +60,20 @@ def rules_cli(tmp_path_factory):
    var items=[task("x","todo"),task("y","todo"),task("z","todo"),task("w","todo")]
    items[0].dueAt=now.addingTimeInterval(-90000);items[1].dueAt=now.addingTimeInterval(3600);items[2].dueAt=now.addingTimeInterval(9*86400)
    print(TaskBoard.timeline(items,now:now).map{$0.bucket.rawValue+":"+$0.tasks.map(\.id).joined()}.joined(separator:","))
+  case "briefing","attention","search":
+   func t(_ id:String,_ hours:Double?,_ status:String="todo",_ done:Bool=false)->ManagedTask {
+    var x=task(id,status,done);x.title="合成_"+id;x.dueAt=hours.map{now.addingTimeInterval($0*3600)};return x
+   }
+   let list=[t("late",-30),t("today",3),t("doing",nil,"doing"),t("wait",200,"waiting"),t("tomorrow",20),t("later",400),t("none",nil),t("done",-5,"todo",true)]
+   if a[1]=="attention" {print(DailyBriefing.attentionCount(list,now:now))}
+   else if a[1]=="search" {print(TaskBoard.select(list,group:"all",lens:.active,query:a[2]).map(\.id).joined(separator:","))}
+   else {
+    let items=DailyBriefing.items(list,now:now)
+    print(items.map(\.title).joined(separator:","));print(DailyBriefing.fallback(items,now:now));print(DailyBriefing.fallback([],now:now))
+   }
+  case "postpone":
+   let due:Date?=a[2]=="none" ? nil : f.date(from:a[2])
+   print(f.string(from:TaskBoard.postponed(due,nextWeekday:a[3]=="monday" ? 2 : nil,now:now)))
   case "date": print(DateSuggestion.date(for:a[2],now:now).map{f.string(from:$0)} ?? "nil")
   case "extract":print(DateSuggestion.explicitDateText(in:a[2]) ?? "nil")
   case "query":
@@ -89,7 +103,7 @@ def rules_cli(tmp_path_factory):
 }
 ''')
     binary=folder/'rules'
-    result=subprocess.run(['swiftc','-parse-as-library','-swift-version','5',str(ROOT/'poc/metadata-journal/OperationJournal.swift'),str(ROOT/'apps/macos/Sources/Domain.swift'),str(ROOT/'apps/macos/Sources/TaskBoard.swift'),str(ROOT/'apps/macos/Sources/ConversationLogic.swift'),str(ROOT/'apps/macos/Sources/NotificationRules.swift'),str(main),'-o',str(binary)],capture_output=True,text=True,timeout=90)
+    result=subprocess.run(['swiftc','-parse-as-library','-swift-version','5',str(ROOT/'poc/metadata-journal/OperationJournal.swift'),str(ROOT/'apps/macos/Sources/Domain.swift'),str(ROOT/'apps/macos/Sources/TaskBoard.swift'),str(ROOT/'apps/macos/Sources/ConversationLogic.swift'),str(ROOT/'apps/macos/Sources/NotificationRules.swift'),str(ROOT/'apps/macos/Sources/DailyBriefing.swift'),str(main),'-o',str(binary)],capture_output=True,text=True,timeout=90)
     assert result.returncode==0,result.stderr
     return binary
 
@@ -239,3 +253,24 @@ def test_reference_board_all_retains_cancelled_and_completed(rules_cli):
 def test_inline_list_page_threshold_and_order(rules_cli,count,expanded):
     expected=list(range(count if expanded else min(count,10)))
     assert run(rules_cli,'page',str(count),'expanded' if expanded else 'collapsed')==','.join(map(str,expected))
+
+def test_briefing_orders_by_urgency_and_skips_finished_and_distant(rules_cli):
+    titles,*text=run(rules_cli,'briefing').split('\n')
+    assert titles=='合成_late,合成_today,合成_doing,合成_wait,合成_tomorrow'
+    body='\n'.join(text)
+    assert body.startswith('下午好。') and '已逾期 1 件：「合成_late」。' in body and '今天到期 1 件：「合成_today」（今天 17:00）。' in body
+    assert '进行中 1 件：「合成_doing」。' in body and '建议先处理「合成_late」。' in body and '合成_done' not in body
+    assert body.endswith('下午好。今天没有到期或进行中的事项，可以从容安排。')
+
+def test_menu_bar_count_is_overdue_plus_today(rules_cli):assert run(rules_cli,'attention')=='2'
+
+@pytest.mark.parametrize('query,expected',[('today','today'),('合成_WAIT','wait'),('收件箱','late,today,tomorrow,wait,later,doing,none'),('  ','late,today,tomorrow,wait,later,doing,none'),('无此任务','')])
+def test_search_matches_title_notes_or_group(rules_cli,query,expected):assert run(rules_cli,'search',query)==expected
+
+# Clock: Friday 2026-10-23 14:00 in UTC+8.
+@pytest.mark.parametrize('due,mode,expected',[
+ ('2026-10-20T07:30:00Z','tomorrow','2026-10-24T07:30:00Z'),   # overdue 15:30 -> tomorrow 15:30
+ ('none','tomorrow','2026-10-24T01:00:00Z'),                   # no due date -> tomorrow 09:00
+ ('2026-10-23T09:00:00Z','monday','2026-10-26T09:00:00Z'),     # today 17:00 -> next Monday 17:00
+ ('none','monday','2026-10-26T01:00:00Z')])
+def test_postpone_keeps_time_of_day(rules_cli,due,mode,expected):assert run(rules_cli,'postpone',due,mode)==expected

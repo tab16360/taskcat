@@ -88,6 +88,35 @@ final class ModelClient: NSObject, URLSessionTaskDelegate {
         let refined=ConversationRules.refine(decoded,input:text)
         return try TaskCommand.decode(JSONEncoder().encode(refined),expectedId:id,tasks:tasks)
     }
+
+    /// Plain-text chat call for prose (daily briefing, connection test); never yields a command.
+    func chat(system:String,user:String,preferences:ModelPreferences,key override:String?=nil,maxTokens:Int=400) async throws->String {
+        let endpoint=try preferences.endpoint()
+        guard !preferences.model.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty else{throw AppFailure.message("尚未填写模型 ID。")}
+        let stored=try await Task.detached {try SecretStore.modelKey(preferences)}.value
+        let key=override.flatMap{$0.isEmpty ? nil : $0} ?? stored
+        if preferences.provider == "cloud",key?.isEmpty != false {throw AppFailure.message("尚未配置云端模型 Key。")}
+        var request=URLRequest(url:endpoint)
+        request.httpMethod="POST";request.timeoutInterval=preferences.provider == "cloud" ? 35 : 65
+        request.setValue("application/json",forHTTPHeaderField:"Content-Type")
+        if let key,!key.isEmpty {request.setValue("Bearer "+key,forHTTPHeaderField:"Authorization")}
+        request.httpBody=try JSONSerialization.data(withJSONObject:["model":preferences.model,"temperature":0.3,"max_tokens":maxTokens,
+            "messages":[["role":"system","content":system],["role":"user","content":user]]])
+        let config=URLSessionConfiguration.ephemeral;config.timeoutIntervalForRequest=request.timeoutInterval
+        let session=URLSession(configuration:config,delegate:self,delegateQueue:nil)
+        defer {session.invalidateAndCancel()}
+        let (data,response)=try await session.data(for:request)
+        guard let http=response as? HTTPURLResponse else {throw AppFailure.message("模型服务没有有效响应。")}
+        guard http.statusCode==200 else {throw AppFailure.message("模型服务返回 HTTP \(http.statusCode)。")}
+        guard let json=try JSONSerialization.jsonObject(with:data) as? [String:Any],
+              let choices=json["choices"] as? [[String:Any]],let message=choices.first?["message"] as? [String:Any],
+              let content=message["content"] as? String else {throw AppFailure.message("模型没有返回文字内容。")}
+        // Some local models wrap reasoning in <think> blocks; keep only the answer.
+        var text=content.replacingOccurrences(of:#"(?s)<think>.*?</think>"#,with:"",options:.regularExpression)
+        text=text.replacingOccurrences(of:#"[*#`]"#,with:"",options:.regularExpression).trimmingCharacters(in:.whitespacesAndNewlines)
+        guard !text.isEmpty else {throw AppFailure.message("模型没有返回文字内容。")}
+        return String(text.prefix(600))
+    }
 }
 
 @MainActor

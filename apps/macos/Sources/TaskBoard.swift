@@ -2,7 +2,7 @@ import Foundation
 
 enum TaskLens:String,CaseIterable {
     case active,doing,waiting,completed
-    var title:String {switch self {case .active:return "待办";case .doing:return "进行中";case .waiting:return "等待";case .completed:return "已完成"}}
+    var title:String {switch self {case .active:return "未完成";case .doing:return "进行中";case .waiting:return "等待";case .completed:return "已完成"}}
     func includes(_ task:ManagedTask)->Bool {
         guard !task.softDeleted,!task.archived else{return false}
         if self == .completed {return task.completed}
@@ -14,8 +14,10 @@ enum TaskLens:String,CaseIterable {
 enum TaskBoard {
     static let collapsedLimit=10
     static func page<T>(_ items:[T],expanded:Bool)->[T] {expanded ? items : Array(items.prefix(collapsedLimit))}
-    static func select(_ tasks:[ManagedTask],group:String,lens:TaskLens,trash:Bool=false,includeCompleted:Bool=false)->[ManagedTask] {
-        tasks.filter {task in
+    static func select(_ tasks:[ManagedTask],group:String,lens:TaskLens,trash:Bool=false,includeCompleted:Bool=false,query:String="")->[ManagedTask] {
+        let needle=query.trimmingCharacters(in:.whitespacesAndNewlines)
+        return tasks.filter {task in
+            (needle.isEmpty || [task.title,task.notes,task.group.title].contains{$0.localizedCaseInsensitiveContains(needle)}) &&
             (group == "all" || task.group.rawValue == group) &&
             (trash ? task.softDeleted : includeCompleted ? !task.softDeleted && !task.archived : lens.includes(task))
         }.sorted {a,b in
@@ -59,6 +61,14 @@ extension TaskBoard {
     static func timeline(_ tasks:[ManagedTask],now:Date,calendar:Calendar = .current)->[(bucket:DueBucket,tasks:[ManagedTask])] {
         let grouped=Dictionary(grouping:tasks){bucket($0.dueAt,now:now,calendar:calendar)}
         return DueBucket.allCases.compactMap {key in grouped[key].map{(key,$0)}}
+    }
+    /// Keeps the task's time of day; tasks without a due date land at 09:00.
+    static func postponed(_ due:Date?,days:Int?=nil,nextWeekday weekday:Int?=nil,now:Date=Date(),calendar:Calendar = .current)->Date {
+        let base=calendar.startOfDay(for:now)
+        var day=calendar.date(byAdding:.day,value:days ?? 1,to:base)!
+        if let weekday {day=calendar.nextDate(after:base,matching:DateComponents(weekday:weekday),matchingPolicy:.nextTime)!}
+        let time=due.map{calendar.dateComponents([.hour,.minute],from:$0)} ?? DateComponents(hour:9,minute:0)
+        return calendar.date(bySettingHour:time.hour ?? 9,minute:time.minute ?? 0,second:0,of:day)!
     }
     private static func dayDistance(from a:Date,to b:Date,calendar:Calendar)->Int {
         calendar.dateComponents([.day],from:calendar.startOfDay(for:a),to:calendar.startOfDay(for:b)).day ?? 0

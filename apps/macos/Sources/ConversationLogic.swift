@@ -45,6 +45,8 @@ struct FeedbackItem:Identifiable {
     let output:String
     let date=Date()
     let isError:Bool
+    /// "menu", "wechat" or "briefing" (the daily summary); shown as a small label.
+    var origin:String="menu"
     var sections:FeedbackSections {FeedbackSections(output)}
 }
 

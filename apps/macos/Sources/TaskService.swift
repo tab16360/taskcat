@@ -68,6 +68,20 @@ final class TaskService: ObservableObject {
     @Published var settingsPresented=false
     /// "popover" or "window": the surface the user last used; only it presents sheets and alerts.
     @Published var activeSurface="popover"
+    @Published var settingsTab="general"
+    /// Latest exchange shown under the composer; the full history lives in 对话.
+    @Published var latestReply:FeedbackItem?
+    @Published var briefingInProgress=false
+    @Published var highlightedTaskID:String?
+    @Published var undoNotice:UndoNotice?
+    @Published var searchText=""
+    @Published var searchVisible=false
+    /// Bumped by the global shortcut; the visible surface focuses its input.
+    @Published var focusRequest=0
+    @Published var modelTestNotice=""
+    @Published var dailyBriefingEnabled=UserDefaults.standard.object(forKey:"TaskSecretary.briefing.enabled") as? Bool ?? true {didSet{UserDefaults.standard.set(dailyBriefingEnabled,forKey:"TaskSecretary.briefing.enabled")}}
+    @Published var hotKeyEnabled=UserDefaults.standard.object(forKey:"TaskSecretary.hotkey.enabled") as? Bool ?? true {didSet{UserDefaults.standard.set(hotKeyEnabled,forKey:"TaskSecretary.hotkey.enabled")}}
+    @Published var menuBadgeEnabled=UserDefaults.standard.object(forKey:"TaskSecretary.menuBadge.enabled") as? Bool ?? true {didSet{UserDefaults.standard.set(menuBadgeEnabled,forKey:"TaskSecretary.menuBadge.enabled")}}
     @Published var preferences=ModelPreferences()
     @Published var sourceChoices:[(id:String,title:String)]=[]
     @Published var syncNote="任务由系统提醒事项管理；扩展数据先在本机持久保存。"
@@ -96,6 +110,11 @@ final class TaskService: ObservableObject {
             if let data=try? Data(contentsOf:AppPaths.preferences),let p=try? JSONDecoder().decode(ModelPreferences.self,from:data) { preferences=p }
             if let data=try? Data(contentsOf:AppPaths.root.appendingPathComponent("task-numbers.json")) {taskNumbers=try JSONDecoder().decode(TaskNumbers.self,from:data)}
             preferences.migrateProfiles()
+            // Local models always required confirmation before; keep that as the starting point.
+            if !UserDefaults.standard.bool(forKey:"TaskSecretary.confirmMigrated") {
+                if preferences.provider != "cloud" {preferences.confirmAll=true;try? AppPaths.write(preferences,to:AppPaths.preferences)}
+                UserDefaults.standard.set(true,forKey:"TaskSecretary.confirmMigrated")
+            }
             loadExperiencePreferences()
             let file=AppPaths.root.appendingPathComponent("actor.json")
             if let data=try? Data(contentsOf:file),let id=try? JSONDecoder().decode(String.self,from:data) { actorID=id }
@@ -116,7 +135,7 @@ final class TaskService: ObservableObject {
         } catch { errorMessage="本地数据目录初始化失败：\(error.localizedDescription)" }
     }
     var visibleTasks:[ManagedTask] {
-        TaskBoard.select(tasks,group:selectedGroup,lens:taskLens,trash:showTrash,includeCompleted:showCompleted)
+        TaskBoard.select(tasks,group:selectedGroup,lens:taskLens,trash:showTrash,includeCompleted:showCompleted,query:searchVisible ? searchText : "")
     }
     var activeCount:Int { tasks.filter{!$0.softDeleted && !$0.archived && !$0.completed && $0.status != "cancelled"}.count }
     func connect() async {
@@ -215,10 +234,8 @@ final class TaskService: ObservableObject {
         let result=await execute(text,source:source,id:id)
         if Date().timeIntervalSince(lastArchive)>3600 {archiveOldRequests()}
         if result.status != "busy" {
-            let record=try? loadRecord(id)
-            let changesTask=(ConversationRules.confirmation(text) != nil && result.status=="applied") || ["create_task","update_task","complete_task","reopen_task","delete_task","move_task"].contains(record?.command?.intent ?? "")
-            if changesTask && result.ok {selectedTab="tasks"} else {selectedTab="feedback"}
-            feedback.insert(FeedbackItem(input:text,output:result.message,isError:!result.ok),at:0)
+            let item=FeedbackItem(input:text,output:result.message,isError:!result.ok,origin:source.hasPrefix("wechat:") ? "wechat" : "menu")
+            feedback.insert(item,at:0);latestReply=item
             if feedback.count>40 {feedback.removeLast(feedback.count-40)}
         }
         return result
@@ -260,7 +277,7 @@ final class TaskService: ObservableObject {
             processingStage="正在校验操作与日期"
             command=try ConversationRules.cleanCreation(ConversationRules.scopeQuery(ConversationRules.refine(command,input:input),input:input,groups:groups),input:input,groups:groups)
             command=try TaskCommand.decode(JSONEncoder().encode(command),expectedId:id,tasks:snapshot)
-            if preferences.confirmAll || preferences.provider != "cloud" { command.requiresConfirmation=true }
+            if preferences.confirmAll { command.requiresConfirmation=true }
             record!.command=command
             if command.intent=="clarify" { throw AppFailure.message("还不能确定要处理哪件事，请补充具体任务名称或操作。") }
             if command.intent=="query_tasks" {
@@ -390,6 +407,7 @@ final class TaskService: ObservableObject {
         let n=taskNumbers.values[targetID].map(String.init) ?? "?"
         record.reply="已处理任务\(n)\n\n\(saved.title)\n\(saved.softDeleted ? "已移入回收站，系统提醒已同步移除" : saved.statusLabel) · \(saved.group.title)"
         try saveRecord(record);message=record.reply!;errorMessage=nil
+        highlight(targetID)
         if c.intent=="restore_task" {try? TaskTrashStore(directory:AppPaths.trash).remove(targetID)}
     }
     func confirmPending() async {
@@ -560,7 +578,11 @@ final class TaskService: ObservableObject {
         return !busy
     }
     func restore(_ task:ManagedTask) async { await manualAction(task,intent:"restore_task",text:"恢复回收站任务") }
-    func complete(_ task:ManagedTask) async { await manualAction(task,intent:task.completed ? "reopen_task" : "complete_task",text:task.completed ? "重新打开任务" : "手动标记完成") }
+    func complete(_ task:ManagedTask) async {
+        let completing = !task.completed
+        await manualAction(task,intent:completing ? "complete_task" : "reopen_task",text:completing ? "手动标记完成" : "重新打开任务")
+        if completing,errorMessage == nil {offerUndo(task)}
+    }
     func manualAction(_ task:ManagedTask,intent:String,text:String) async {
         // Manual checkbox uses the same durable execution path without spending a model request.
         guard await waitUntilIdle() else{errorMessage=Self.busyNotice;return};busy=true;errorMessage=nil;defer{busy=false}

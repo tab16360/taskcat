@@ -10,6 +10,9 @@ final class AppDelegate:NSObject,NSApplicationDelegate {
     var window:NSWindow?
     var service:TaskService!
     var appearanceObserver:AnyCancellable?
+    var observers:Set<AnyCancellable>=[]
+    var hotKey:GlobalHotKey?
+    var badgeTimer:Timer?
     func applicationDidFinishLaunching(_ notification:Notification) {
         service=TaskService()
         statusItem=NSStatusBar.system.statusItem(withLength:NSStatusItem.variableLength)
@@ -50,6 +53,28 @@ final class AppDelegate:NSObject,NSApplicationDelegate {
         UpdateService.shared.isBusy={[weak self] in self?.service.busy == true}
         UpdateService.shared.blocker={[weak self] in self?.service.restorePending == true ? "有一次备份恢复尚未完成。请先在设置的「数据与恢复」中继续恢复，再安装更新。" : nil}
         UpdateService.shared.start()
+        hotKey=GlobalHotKey{[weak self] in self?.quickCapture()}
+        service.$hotKeyEnabled.sink{[weak self] on in if on {self?.hotKey?.register()} else {self?.hotKey?.unregister()}}.store(in:&observers)
+        // Menu bar count of overdue + due today; refreshed on change and each minute (due times pass).
+        service.$tasks.combineLatest(service.$menuBadgeEnabled).sink{[weak self] tasks,on in self?.updateBadge(tasks,enabled:on)}.store(in:&observers)
+        badgeTimer=Timer.scheduledTimer(withTimeInterval:60,repeats:true){[weak self] _ in Task{@MainActor in guard let self else{return};self.updateBadge(self.service.tasks,enabled:self.service.menuBadgeEnabled)}}
+        // The daily briefing waits for Reminders when a surface opened before connecting finished.
+        service.$isConnected.removeDuplicates().filter{$0}.sink{[weak self] _ in
+            DispatchQueue.main.async {guard let self,self.popover.isShown || self.window?.isVisible == true else{return};self.service.briefIfNeeded()}
+        }.store(in:&observers)
+    }
+    private func updateBadge(_ tasks:[ManagedTask],enabled:Bool) {
+        guard let button=statusItem.button else{return}
+        let count=enabled ? DailyBriefing.attentionCount(tasks,now:Date()) : 0
+        button.imagePosition = .imageLeft
+        button.title=count>0 ? " \(count)" : ""
+        button.toolTip=count>0 ? "记事喵 · 逾期和今天到期共 \(count) 件" : "记事喵 · 查看任务或一句话安排"
+    }
+    /// ⌥⌘T from anywhere: open the surface in use and put the cursor in the input.
+    func quickCapture() {
+        if window?.isVisible == true && window?.isMiniaturized == false {openMainWindow()} else {openPopover()}
+        service.composerCollapsed=false
+        service.focusRequest+=1
     }
     @objc func statusItemActivated() {
         let event=NSApp.currentEvent
@@ -75,11 +100,12 @@ final class AppDelegate:NSObject,NSApplicationDelegate {
         service.activeSurface="popover"
         popover.show(relativeTo:button.bounds,of:button,preferredEdge:.minY)
         NSApp.activate(ignoringOtherApps:true)
+        service.briefIfNeeded()
     }
     @objc func openSettings() {
         DispatchQueue.main.async { [weak self] in
             guard let self else{return}
-            self.openMainWindow();self.service.settingsPresented=true
+            self.openMainWindow();self.service.openSettings("general")
         }
     }
     @objc func checkForUpdates() {UpdateService.shared.checkInteractively()}
@@ -99,6 +125,7 @@ final class AppDelegate:NSObject,NSApplicationDelegate {
             w.contentView=NSHostingView(rootView:HousekeeperView(service:service,openWindow:{}));w.center();window=w
         }
         window!.makeKeyAndOrderFront(nil);NSApp.activate(ignoringOtherApps:true)
+        service.briefIfNeeded()
     }
     func applicationShouldHandleReopen(_ sender:NSApplication,hasVisibleWindows flag:Bool)->Bool {
         if !flag {openMainWindow()};return true

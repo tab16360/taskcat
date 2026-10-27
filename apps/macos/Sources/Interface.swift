@@ -22,11 +22,14 @@ struct HousekeeperView:View {
                 .allowsHitTesting(!service.composerCollapsed).accessibilityHidden(service.composerCollapsed)
                 .padding(.horizontal,22).padding(.bottom,service.composerCollapsed ? 0 : 12)
                 .transaction{$0.animation=nil;$0.disablesAnimations=true}
+            if !service.composerCollapsed,service.selectedTab != "feedback",service.briefingInProgress || service.latestReply != nil {
+                replyCard.padding(.horizontal,22).padding(.bottom,12)
+            }
             navigation.padding(.horizontal,22).padding(.bottom,8)
             utilityBar.padding(.horizontal,22).padding(.bottom,10)
             ScrollView {
                 VStack(alignment:.leading,spacing:10) {
-                    if service.selectedTab == "feedback" {feedbackPanel}
+                    if service.selectedTab == "feedback" {conversationHistory}
                     else if service.selectedTab == "pending" {
                         if let pending=service.pending {confirmation(pending)}
                         else {Text("没有待确认的操作").font(.system(size:13)).foregroundStyle(palette.muted).frame(maxWidth:.infinity).padding(28).consoleCard()}
@@ -39,7 +42,10 @@ struct HousekeeperView:View {
             }.scrollIndicators(.hidden)
             if service.selectedTab == "tasks",service.isConnected,service.visibleTasks.count>TaskBoard.collapsedLimit {allTasksButton.padding(.horizontal,22).padding(.bottom,10)}
         }.padding(.bottom,8)}.frame(minWidth:500,minHeight:440)
+            .overlay(alignment:.bottom){if let notice=service.undoNotice {undoToast(notice).padding(.bottom,18)}}
+            .animation(reduceMotion ? nil : .spring(response:0.3,dampingFraction:0.85),value:service.undoNotice)
             .onChange(of:taskScope){_ in service.tasksExpanded=false}
+            .onChange(of:service.focusRequest){_ in if service.activeSurface == surface {inputFocused=true}}
             .background(SurfaceVisibility(motion:motion).frame(width:0,height:0))
             .background(KeySurfaceTracker{[surface] in if service.activeSurface != surface {service.activeSurface=surface}}.frame(width:0,height:0))
             .themeScope(appearance.selected).environment(\.timeZone,TimeZone.current)
@@ -76,22 +82,67 @@ struct HousekeeperView:View {
     }
     // Plain stack without animation: selectable Text is AppKit-backed, and morphing it from a
     // neighbouring card during insertion rendered overlapping or flipped glyphs.
-    private var feedbackPanel:some View {
+    private var conversationHistory:some View {
         VStack(alignment:.leading,spacing:12) {
             if service.feedback.isEmpty {
-                VStack(spacing:8){Image(systemName:"text.bubble").font(.system(size:22,weight:.light));Text("查询结果与处理反馈会显示在这里").font(.system(size:11))}.foregroundStyle(palette.muted).frame(maxWidth:.infinity).padding(.vertical,24)
+                VStack(spacing:8){Image(systemName:"bubble.left.and.text.bubble.right").font(.system(size:22,weight:.light));Text("和记事喵的对话、查询结果与每日提醒会显示在这里").font(.system(size:12))}.foregroundStyle(palette.muted).frame(maxWidth:.infinity).padding(.vertical,24)
             }
             ForEach(service.feedback){item in
                 VStack(alignment:.leading,spacing:9) {
-                    HStack{Text(item.input).lineLimit(2);Spacer();Text(item.date,style:.time).font(.system(size:9))}.font(.system(size:11)).foregroundStyle(palette.muted)
-                    Text(item.sections.content).font(.system(size:12)).lineSpacing(5).foregroundStyle(item.isError ? palette.warning : palette.text).textSelection(.enabled).fixedSize(horizontal:false,vertical:true)
-                    if let hint=item.sections.hint {
-                        Divider().overlay(palette.edge)
-                        Label(hint,systemImage:"info.circle").font(.system(size:10)).foregroundStyle(palette.muted).lineSpacing(3).textSelection(.enabled)
-                    }
+                    HStack(spacing:6){originLabel(item);Text(item.input).lineLimit(2);Spacer();Text(item.date,style:.time).font(.system(size:10))}.font(.system(size:12)).foregroundStyle(palette.muted)
+                    replyText(item)
                 }.frame(maxWidth:.infinity,alignment:.leading).padding(13).consoleCard(radius:12)
             }
         }.transaction{$0.animation=nil}
+    }
+    @ViewBuilder private func originLabel(_ item:FeedbackItem)->some View {
+        let label=item.origin.hasPrefix("briefing") ? "今日提醒" : item.origin == "wechat" ? "微信" : nil
+        if let label {
+            Text(label).font(.system(size:10,weight:.semibold)).foregroundStyle(palette.accent)
+                .padding(.horizontal,6).padding(.vertical,2).background(palette.accent.opacity(0.10),in:Capsule())
+        }
+    }
+    @ViewBuilder private func replyText(_ item:FeedbackItem,lines:Int?=nil)->some View {
+        Text(item.sections.content).font(.system(size:13)).lineSpacing(5).lineLimit(lines).foregroundStyle(item.isError ? palette.warning : palette.text).textSelection(.enabled).fixedSize(horizontal:false,vertical:true)
+        if lines == nil,let hint=item.sections.hint {
+            Divider().overlay(palette.edge)
+            Label(hint,systemImage:"info.circle").font(.system(size:11)).foregroundStyle(palette.muted).lineSpacing(3).textSelection(.enabled)
+        }
+    }
+    /// The latest reply or today's briefing, right under the input instead of switching tabs.
+    private var replyCard:some View {
+        VStack(alignment:.leading,spacing:8) {
+            HStack(spacing:6) {
+                Image(systemName:"sparkles").foregroundStyle(palette.spectrum)
+                if service.briefingInProgress && service.latestReply?.origin.hasPrefix("briefing") != true {
+                    Text("正在整理今日待办…").foregroundStyle(palette.muted)
+                } else if let item=service.latestReply {
+                    Text(item.origin.hasPrefix("briefing") ? "今日提醒" : item.origin == "wechat" ? "来自微信 · \(item.input)" : item.input).lineLimit(1).foregroundStyle(palette.muted)
+                    if item.origin == "briefing" {Text("AI 整理 · \(service.preferences.activeName)").foregroundStyle(palette.muted.opacity(0.8))}
+                }
+                Spacer()
+                if service.latestReply?.origin.hasPrefix("briefing") == true {
+                    Button{Task{await service.runBriefing()}}label:{Image(systemName:"arrow.clockwise")}.buttonStyle(.plain).foregroundStyle(palette.muted).help("重新整理").disabled(service.briefingInProgress)
+                }
+                Button{service.selectedTab="feedback"}label:{Text("对话记录")}.buttonStyle(.plain).foregroundStyle(palette.accent).help("查看全部对话")
+                Button{service.latestReply=nil}label:{Image(systemName:"xmark")}.buttonStyle(.plain).foregroundStyle(palette.muted).help("收起")
+            }.font(.system(size:11,weight:.medium))
+            if service.briefingInProgress && service.latestReply?.origin.hasPrefix("briefing") != true {
+                ThoughtActivityView(animated:motion.visible && !reduceMotion,dark:!palette.isLiquid).frame(height:28)
+            } else if let item=service.latestReply {
+                replyText(item,lines:6)
+            }
+        }.padding(.horizontal,14).padding(.vertical,11).consoleCard(radius:16)
+            .overlay(RoundedRectangle(cornerRadius:16,style:.continuous).strokeBorder(palette.accent.opacity(0.18)))
+    }
+    private func undoToast(_ notice:UndoNotice)->some View {
+        HStack(spacing:10) {
+            Image(systemName:"checkmark.circle.fill").foregroundStyle(palette.success)
+            Text("已完成「\(notice.title)」").lineLimit(1)
+            Button("撤销"){Task{await service.undoCompletion()}}.buttonStyle(.plain).foregroundStyle(palette.accent).fontWeight(.semibold)
+        }.font(.system(size:12)).padding(.horizontal,14).padding(.vertical,9)
+            .themeGlass(radius:18).shadow(color:palette.shadow,radius:10,y:4)
+            .transition(.move(edge:.bottom).combined(with:.opacity))
     }
     private var header:some View {
         HStack(spacing:10) {
@@ -102,14 +153,16 @@ struct HousekeeperView:View {
             }.font(.system(size:18,weight:.semibold)).lineLimit(1)
             connectionStatus
             Spacer(minLength:6)
-            Button{service.settingsPresented=true}label:{
+            Button{service.openSettings(updates.candidate == nil ? "general" : "update")}label:{
                 Image(systemName:"gearshape").font(.system(size:19,weight:.regular)).frame(width:34,height:34).themeGlass(radius:13,interactive:true)
                     .overlay(alignment:.topTrailing) {
                         if updates.candidate != nil {Circle().fill(palette.accent).frame(width:9,height:9).overlay(Circle().strokeBorder(.white,lineWidth:1.5)).offset(x:2,y:-2)}
                     }
             }.help(updates.candidate.map{"设置 · 新版本 \($0.version.description) 可安装"} ?? "设置 · 主题、模型、微信与通知")
                 .accessibilityLabel(updates.candidate == nil ? "设置" : "设置，有新版本可安装")
-            Button(action:openWindow){Image(systemName:"arrow.up.left.and.arrow.down.right").font(.system(size:16)).frame(width:34,height:34).themeGlass(radius:13,interactive:true)}.help("打开独立窗口").accessibilityLabel("打开独立窗口")
+            if isPopover {
+                Button(action:openWindow){Image(systemName:"arrow.up.left.and.arrow.down.right").font(.system(size:16)).frame(width:34,height:34).themeGlass(radius:13,interactive:true)}.help("打开独立窗口").accessibilityLabel("打开独立窗口")
+            }
         }.buttonStyle(.plain).foregroundStyle(palette.text)
             .padding(.horizontal,24).padding(.top,22).padding(.bottom,20)
     }
@@ -127,20 +180,18 @@ struct HousekeeperView:View {
             }
         }()
         // When disconnected the onboarding card explains it; the dot colour is enough here.
-        return Button{service.settingsPresented=true}label:{
-            HStack(spacing:7) {
-                statusDot("提醒事项",tone:service.isConnected ? palette.success : palette.warning)
-                if let wechat {
-                    Rectangle().fill(palette.contentEdge).frame(width:1,height:10)
-                    statusDot(wechat.label,tone:wechat.tone)
-                }
-            }.font(.system(size:11,weight:.medium)).foregroundStyle(palette.muted).lineLimit(1)
-                .padding(.horizontal,9).padding(.vertical,5)
-                .background(palette.text.opacity(palette.isLiquid ? 0.04 : 0.06),in:Capsule()).overlay(Capsule().strokeBorder(palette.contentEdge))
-                .contentShape(Capsule())
-        }.buttonStyle(.plain).fixedSize()
-            .help("提醒事项：\(service.isConnected ? "已连接" : "等待连接")"+(wechat == nil ? "" : " · 微信：\(service.wechatLabel)"))
-            .accessibilityElement(children:.combine)
+        // Each half opens the settings section that can fix it.
+        return HStack(spacing:7) {
+            Button{service.openSettings("sync")}label:{statusDot("提醒事项",tone:service.isConnected ? palette.success : palette.warning)}
+                .help("提醒事项：\(service.isConnected ? "已连接" : "等待连接") · 点击查看同步设置")
+            if let wechat {
+                Rectangle().fill(palette.contentEdge).frame(width:1,height:10)
+                Button{service.openSettings("wechat")}label:{statusDot(wechat.label,tone:wechat.tone)}.help("微信：\(service.wechatLabel) · 点击查看微信设置")
+            }
+        }.buttonStyle(.plain).font(.system(size:11,weight:.medium)).foregroundStyle(palette.muted).lineLimit(1)
+            .padding(.horizontal,9).padding(.vertical,5)
+            .background(palette.text.opacity(palette.isLiquid ? 0.04 : 0.06),in:Capsule()).overlay(Capsule().strokeBorder(palette.contentEdge))
+            .fixedSize()
     }
     private func statusDot(_ label:String,tone:Color)->some View {
         HStack(spacing:5){Circle().fill(tone).frame(width:6,height:6);Text(label)}
@@ -177,6 +228,11 @@ struct HousekeeperView:View {
                 TextField("告诉我需要做什么…",text:$service.inputText,prompt:Text("告诉我需要做什么…").foregroundStyle(palette.muted),axis:.vertical)
                     .font(.system(size:15,weight:.regular)).foregroundStyle(palette.text).lineLimit(1...3).textFieldStyle(.plain)
                     .focused($inputFocused).onSubmit{send()}.accessibilityLabel("与记事喵对话")
+                    // ⇧↩ adds the text as a task title as-is, without asking the model.
+                    .onKeyPress(.return,phases:.down){press in
+                        guard press.modifiers.contains(.shift),canSend else{return .ignored}
+                        Task{await service.manualAdd()};return .handled
+                    }
                 Button(action:send){
                     Image(systemName:"arrow.up").font(.system(size:23,weight:.semibold))
                         .foregroundStyle(canSend ? Color.white : (palette.isLiquid ? Color(red:0.32,green:0.38,blue:0.48) : Color(red:0.73,green:0.78,blue:0.86)))
@@ -190,11 +246,12 @@ struct HousekeeperView:View {
                     ForEach(service.preferences.profiles ?? []){profile in
                         Button {service.selectModel(profile.id)} label:{Label(profile.name+" · "+profile.model,systemImage:profile.id==service.preferences.selectedProfileID ? "checkmark.circle.fill" : "circle")}
                     }
-                    Divider();Button("管理模型配置"){service.settingsPresented=true}
-                } label:{Label(service.preferences.activeName,systemImage:service.preferences.provider=="local" ? "desktopcomputer" : "cloud").font(.system(size:10)).foregroundStyle(palette.muted)}
+                    Divider();Button("管理模型配置"){service.openSettings("ai")}
+                } label:{Label(service.preferences.activeName,systemImage:service.preferences.provider=="local" ? "desktopcomputer" : "cloud").font(.system(size:11)).foregroundStyle(palette.muted)}
                     .menuStyle(.borderlessButton).fixedSize().help("切换模型")
                 Spacer()
-                Button("手动添加"){Task{await service.manualAdd()}}.buttonStyle(.plain).font(.system(size:10)).foregroundStyle(palette.muted).disabled(!canSend)
+                Button{Task{await service.manualAdd()}}label:{Label("直接添加 ⇧↩",systemImage:"plus")}.buttonStyle(.plain).font(.system(size:11)).foregroundStyle(palette.muted).disabled(!canSend)
+                    .help("不经过 AI，把输入的文字直接作为任务标题添加（⇧↩）")
             }.padding(.leading,3)
             if let error=service.errorMessage {
                 HStack(alignment:.top,spacing:6){Image(systemName:"exclamationmark.circle");Text(error).font(.system(size:11)).textSelection(.enabled);Spacer();Button{service.errorMessage=nil}label:{Image(systemName:"xmark").font(.system(size:9))}.buttonStyle(.plain)}.foregroundStyle(palette.warning)
@@ -223,20 +280,29 @@ struct HousekeeperView:View {
             .accessibilityElement(children:.combine)
     }
     private var groupMenu:some View {
-        Menu {
-            Button("全部分组"){service.selectedTab="tasks";service.selectedGroup="all"}
-            Divider()
-            ForEach(service.groups){group in
-                Button {service.selectedTab="tasks";service.selectedGroup=group.rawValue} label:{
-                    Label(group.title,systemImage:service.selectedGroup==group.rawValue ? "checkmark" : "folder")
+        let filtered=service.selectedGroup != "all"
+        let name=filtered ? (service.groups.first{$0.rawValue == service.selectedGroup}?.title ?? "分组") : "全部分组"
+        return HStack(spacing:2) {
+            Menu {
+                Button("全部分组"){service.selectedTab="tasks";service.selectedGroup="all"}
+                Divider()
+                ForEach(service.groups){group in
+                    Button {service.selectedTab="tasks";service.selectedGroup=group.rawValue} label:{
+                        Label(group.title,systemImage:service.selectedGroup==group.rawValue ? "checkmark" : "folder")
+                    }
                 }
+                Divider()
+                Button("管理分组"){service.groupsNotice="";service.groupsPresented=true}
+            } label:{
+                Text(filtered ? "分组：\(name)" : name).font(.system(size:12,weight:filtered ? .semibold : .regular)).foregroundStyle(filtered ? palette.accent : palette.muted)
+                    .padding(.leading,9).padding(.trailing,filtered ? 2 : 9).padding(.vertical,6).contentShape(Rectangle())
+            }.menuStyle(.borderlessButton).fixedSize().help("按分组筛选").accessibilityLabel("切换分组")
+            // A visible way out: the filter also narrows every tab count.
+            if filtered {
+                Button{service.selectedGroup="all"}label:{Image(systemName:"xmark.circle.fill").font(.system(size:12))}
+                    .buttonStyle(.plain).foregroundStyle(palette.accent.opacity(0.7)).padding(.trailing,7).help("清除分组筛选").accessibilityLabel("清除分组筛选")
             }
-            Divider()
-            Button("管理分组"){service.groupsNotice="";service.groupsPresented=true}
-        } label:{
-            Text(service.selectedGroup == "all" ? "全部分组" : (service.groups.first{$0.rawValue == service.selectedGroup}?.title ?? "分组")).font(.system(size:11)).foregroundStyle(palette.muted)
-                .padding(.horizontal,9).padding(.vertical,8).contentShape(Rectangle())
-        }.menuStyle(.borderlessButton).fixedSize().help("查看全部分组").accessibilityLabel("切换分组")
+        }.background(filtered ? palette.accent.opacity(0.10) : .clear,in:Capsule())
     }
     private var navigation:some View {
         HStack(spacing:2) {
@@ -261,36 +327,54 @@ struct HousekeeperView:View {
     private func timelineHeader(_ bucket:DueBucket,count:Int)->some View {
         let tone=bucket == .overdue ? palette.danger : bucket == .today ? palette.warning : bucket == .tomorrow ? palette.accent : palette.muted
         return HStack(spacing:6) {
-            Image(systemName:bucket.symbol).font(.system(size:10,weight:.semibold))
-            Text(bucket.title).font(.system(size:11,weight:.semibold))
-            Text("\(count)").font(.system(size:10,weight:.medium)).monospacedDigit().foregroundStyle(palette.muted)
+            Image(systemName:bucket.symbol).font(.system(size:11,weight:.semibold))
+            Text(bucket.title).font(.system(size:12,weight:.semibold))
+            Text("\(count)").font(.system(size:11,weight:.medium)).monospacedDigit().foregroundStyle(palette.muted)
             Rectangle().fill(LinearGradient(colors:[tone.opacity(0.35),.clear],startPoint:.leading,endPoint:.trailing)).frame(height:1)
         }.foregroundStyle(tone).padding(.horizontal,4).padding(.top,6).accessibilityElement(children:.combine)
     }
+    private var trashCount:Int {service.tasks.filter(\.softDeleted).count}
     private var utilityBar:some View {
-        HStack(spacing:8) {
-            Button{service.selectedTab="feedback"}label:{Label("反馈 \(service.feedback.count)",systemImage:"text.bubble").font(.system(size:11)).padding(.horizontal,9).frame(height:28).background(service.selectedTab == "feedback" ? palette.selection : .clear,in:Capsule()).contentShape(Rectangle())}.buttonStyle(.plain)
-            if service.pending != nil {
-                Button{service.selectedTab="pending"}label:{Label("待确认 1",systemImage:"exclamationmark.circle").font(.system(size:11)).foregroundStyle(palette.warning).padding(.horizontal,6).frame(height:28).contentShape(Rectangle())}.buttonStyle(.plain)
+        VStack(spacing:8) {
+            HStack(spacing:6) {
+                Button{service.selectedTab=service.selectedTab == "feedback" ? "tasks" : "feedback"}label:{
+                    Label("对话 \(service.feedback.count)",systemImage:"bubble.left.and.text.bubble.right").font(.system(size:12)).padding(.horizontal,9).frame(height:28)
+                        .background(service.selectedTab == "feedback" ? palette.selection : .clear,in:Capsule()).contentShape(Rectangle())
+                }.buttonStyle(.plain).help("和记事喵的对话记录与每日提醒")
+                if service.pending != nil {
+                    Button{service.selectedTab="pending"}label:{Label("待确认 1",systemImage:"exclamationmark.circle").font(.system(size:12)).foregroundStyle(palette.warning).padding(.horizontal,6).frame(height:28).contentShape(Rectangle())}.buttonStyle(.plain)
+                }
+                groupMenu
+                Spacer(minLength:0)
+                Button{
+                    service.searchVisible.toggle();if !service.searchVisible {service.searchText=""}
+                    if service.searchVisible {service.selectedTab="tasks"}
+                }label:{Image(systemName:"magnifyingglass").frame(width:28,height:28).contentShape(Rectangle())}
+                    .buttonStyle(.plain).foregroundStyle(service.searchVisible ? palette.accent : palette.muted).help("搜索任务")
+                Button{service.showTrash.toggle();service.showCompleted=false;service.selectedTab="tasks"}label:{
+                    HStack(spacing:3){Image(systemName:"trash");if trashCount>0 {Text("\(trashCount)").font(.system(size:11)).monospacedDigit()}}.frame(minWidth:28).frame(height:28).contentShape(Rectangle())
+                }.buttonStyle(.plain).foregroundStyle(service.showTrash ? palette.accent : palette.muted).help(service.showTrash ? "返回任务列表" : "回收站")
+                Menu {
+                    Button(service.showCompleted ? "返回列表" : "全部任务（含已完成与已取消）"){service.showCompleted.toggle();service.showTrash=false;service.selectedTab="tasks"}
+                    Divider()
+                    Button("退出记事喵"){NSApp.terminate(nil)}
+                } label:{Image(systemName:"ellipsis").frame(width:28,height:28).contentShape(Rectangle())}.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("更多")
+                Button{
+                    inputFocused=false
+                    var transaction=Transaction();transaction.disablesAnimations=true
+                    withTransaction(transaction){service.composerCollapsed.toggle()}
+                }label:{
+                    Group {if service.composerCollapsed {Image(systemName:"waveform").foregroundStyle(palette.spectrum)}else{Image(systemName:"chevron.up")}}.frame(width:28,height:28).contentShape(Rectangle())
+                }.buttonStyle(.plain).help(service.composerCollapsed ? "展开对话区" : "收起对话区，留出更多空间看任务").accessibilityLabel(service.composerCollapsed ? "展开 AI 对话" : "收起 AI 对话")
+            }.foregroundStyle(palette.muted)
+            if service.searchVisible {
+                HStack(spacing:6) {
+                    Image(systemName:"magnifyingglass").foregroundStyle(palette.muted)
+                    TextField("搜索标题、备注或分组",text:$service.searchText).textFieldStyle(.plain).font(.system(size:13))
+                    if !service.searchText.isEmpty {Button{service.searchText=""}label:{Image(systemName:"xmark.circle.fill")}.buttonStyle(.plain).foregroundStyle(palette.muted)}
+                }.padding(.horizontal,11).padding(.vertical,7).consoleCard(radius:12)
             }
-            groupMenu
-            Spacer(minLength:0)
-            Menu {
-                Button("管理分组"){service.groupsNotice="";service.groupsPresented=true}
-                Button("刷新任务"){Task{await service.refresh()}}
-                Button("全部任务（含已完成与已取消）"){service.showCompleted=true;service.showTrash=false;service.selectedTab="tasks"}
-                Button("回收站"){service.showTrash=true;service.selectedTab="tasks"}
-                Divider()
-                Button("退出记事喵"){NSApp.terminate(nil)}
-            } label:{Image(systemName:"ellipsis").frame(width:28,height:28).contentShape(Rectangle())}.menuStyle(.borderlessButton).fixedSize().help("全部任务、分组与回收站")
-            Button{
-                inputFocused=false
-                var transaction=Transaction();transaction.disablesAnimations=true
-                withTransaction(transaction){service.composerCollapsed.toggle()}
-            }label:{
-                Group {if service.composerCollapsed {Image(systemName:"waveform").foregroundStyle(palette.spectrum)}else{Image(systemName:"chevron.up")}}.frame(width:28,height:28).contentShape(Rectangle())
-            }.buttonStyle(.plain).accessibilityLabel(service.composerCollapsed ? "展开 AI 对话" : "收起 AI 对话")
-        }.foregroundStyle(palette.muted)
+        }
     }
     private var taskSection:some View {
         VStack(alignment:.leading,spacing:13) {
@@ -300,7 +384,7 @@ struct HousekeeperView:View {
                     Text(service.showTrash ? "正在查看回收站" : "全部任务 · 含已完成与已取消")
                     if service.showTrash {Button("清空回收站"){service.destructiveAction = .emptyTrash(service.tasks.filter{$0.softDeleted})}.foregroundStyle(palette.warning).disabled(service.tasks.filter{$0.softDeleted}.isEmpty || service.uiBusy)}
                     Spacer()
-                    Button("返回待办"){service.showCompleted=false;service.showTrash=false;service.taskLens = .active}.buttonStyle(.plain).foregroundStyle(palette.accent)
+                    Button("返回列表"){service.showCompleted=false;service.showTrash=false;service.taskLens = .active}.buttonStyle(.plain).foregroundStyle(palette.accent)
                 }.font(.system(size:10)).foregroundStyle(palette.muted)
             }
             // Ticks each minute so due buckets and relative labels move on time (e.g. today → overdue).
@@ -422,8 +506,8 @@ struct TaskRow:View {
                     ViewThatFits(in:.horizontal) {
                         HStack(spacing:8){taskMetadata}
                         VStack(alignment:.leading,spacing:5){taskMetadata}
-                    }.font(.system(size:11)).foregroundStyle(palette.muted)
-                    if task.conflicted {Label("待核对",systemImage:"exclamationmark.triangle").font(.system(size:10)).foregroundStyle(palette.warning)}
+                    }.font(.system(size:12)).foregroundStyle(palette.muted)
+                    if task.conflicted {Label("待核对",systemImage:"exclamationmark.triangle").font(.system(size:11)).foregroundStyle(palette.warning)}
                 }.frame(maxWidth:.infinity,alignment:.leading).contentShape(Rectangle())
             }.buttonStyle(.plain).disabled(task.conflicted || task.softDeleted).help("编辑任务").accessibilityLabel("\(service.number(for:task))、\(task.title)")
             HStack(spacing:4) {
@@ -432,8 +516,23 @@ struct TaskRow:View {
                     if task.softDeleted {
                         Button("恢复"){Task{await service.restore(task)}}
                         Button("彻底删除",role:.destructive){service.destructiveAction = .purgeTask(task)}
+                    } else if !task.completed {
+                        // The common fixes for an overdue or stalled task, without opening the editor.
+                        Button("推迟到明天"){Task{await service.postpone(task)}}
+                        Button("推迟到下周一"){Task{await service.postpone(task,toNextMonday:true)}}
+                        Menu("状态") {
+                            ForEach([("todo","待办"),("doing","进行中"),("waiting","等待")],id:\.0){status,title in
+                                Button {Task{await service.setStatus(task,status)}} label:{Label(title,systemImage:task.status == status ? "checkmark" : "circle")}.disabled(task.status == status)
+                            }
+                        }
+                        Menu("移到分组") {
+                            ForEach(service.groups.filter{$0 != task.group}){group in Button(group.title){Task{await service.move(task,to:group)}}}
+                        }
+                        Divider()
+                        Button("编辑任务…"){service.beginEdit(task)}
+                        Button("移入回收站",role:.destructive){service.destructiveAction = .deleteTask(task)}
                     } else {
-                        Button("编辑任务"){service.beginEdit(task)}
+                        Button("编辑任务…"){service.beginEdit(task)}
                         Button("移入回收站",role:.destructive){service.destructiveAction = .deleteTask(task)}
                     }
                 } label:{Image(systemName:"ellipsis").frame(width:26,height:28).contentShape(Rectangle())}.menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
@@ -444,6 +543,9 @@ struct TaskRow:View {
                 if let rail {Capsule().fill(rail).frame(width:3).padding(.vertical,14).padding(.leading,4).accessibilityHidden(true)}
             }
             .liquidTile(hovered:hovered)
+            // Just changed (by click, menu, AI or WeChat): a short accent ring shows which row.
+            .overlay(RoundedRectangle(cornerRadius:16,style:.continuous).strokeBorder(palette.accent.opacity(service.highlightedTaskID == task.id ? 0.75 : 0),lineWidth:2))
+            .animation(reduceMotion ? nil : .easeOut(duration:0.35),value:service.highlightedTaskID == task.id)
             .onHover{interaction.hovered=$0}
             .animation(reduceMotion ? nil : .spring(response:0.28,dampingFraction:0.8),value:hovered)
     }
@@ -465,7 +567,7 @@ struct TaskRow:View {
             let urgent=bucket == .overdue || bucket == .today
             let tone=bucket == .overdue ? palette.danger : bucket == .today ? palette.warning : palette.muted
             Label(task.completed ? TaskBoard.dueLabel(date,now:.distantPast) : TaskBoard.dueLabel(date,now:now),systemImage:bucket == .overdue ? "exclamationmark.circle.fill" : "clock")
-                .font(.system(size:11,weight:urgent ? .semibold : .regular)).foregroundStyle(tone).lineLimit(1)
+                .font(.system(size:12,weight:urgent ? .semibold : .regular)).foregroundStyle(tone).lineLimit(1)
                 .padding(.horizontal,urgent ? 7 : 0).padding(.vertical,urgent ? 2 : 0)
                 .background(urgent ? tone.opacity(0.10) : .clear,in:Capsule())
                 .help(date.formatted(.dateTime.year().month().day().hour().minute()))
@@ -474,7 +576,7 @@ struct TaskRow:View {
             Circle().fill(palette.tag(task.group.rawValue)).frame(width:6,height:6)
             Text(task.group.title).lineLimit(1)
         }
-        Text("#\(service.number(for:task))").font(.system(size:10,design:.monospaced)).foregroundStyle(palette.muted.opacity(0.8))
+        Text("#\(service.number(for:task))").font(.system(size:11,design:.monospaced)).foregroundStyle(palette.muted.opacity(0.8))
     }
 }
 
@@ -502,111 +604,45 @@ struct CheckRing:View {
     }
 }
 
+final class SettingsDisclosure:ObservableObject {@Published var advanced=false}
 struct SettingsView:View {
     @ObservedObject var service:TaskService
     @ObservedObject private var appearance=AppearanceStore.shared
+    @StateObject private var disclosure=SettingsDisclosure()
     private var palette:ThemePalette {ThemePalette(theme:appearance.selected)}
     @Environment(\.dismiss) private var dismiss
+    private let tabs:[(id:String,title:String,symbol:String)]=[("general","通用","gearshape"),("ai","AI 模型","cpu"),("sync","同步与备份","arrow.triangle.2.circlepath"),("wechat","微信","bubble.left.and.bubble.right"),("update","更新","arrow.down.circle")]
     var body:some View {
         GlassFamily { VStack(spacing:0) {
             HStack {
-                VStack(alignment:.leading,spacing:5){Text("控制中心").font(.system(size:21,weight:.semibold));Text("模型、任务与微信，在这里连接。").font(.system(size:11)).foregroundStyle(palette.muted)}
-                Spacer();Button("保存并完成"){save()}.buttonStyle(ConsoleButton(prominent:true)).keyboardShortcut(.defaultAction)
-            }.padding(22)
+                Text("设置").font(.system(size:21,weight:.semibold))
+                Spacer();Button("完成"){finish()}.buttonStyle(ConsoleButton(prominent:true)).keyboardShortcut(.defaultAction)
+            }.padding(.horizontal,22).padding(.top,20).padding(.bottom,12)
+            HStack(spacing:2) {
+                ForEach(tabs,id:\.id){tab in
+                    let selected=service.settingsTab == tab.id
+                    Button{service.settingsTab=tab.id}label:{
+                        VStack(spacing:3){Image(systemName:tab.symbol).font(.system(size:14));Text(tab.title).font(.system(size:11,weight:selected ? .semibold : .regular))}
+                            .foregroundStyle(selected ? palette.accent : palette.muted).frame(maxWidth:.infinity).padding(.vertical,7)
+                            .background(selected ? palette.selection : .clear,in:RoundedRectangle(cornerRadius:10)).contentShape(Rectangle())
+                    }.buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }.padding(4).themeGlass(radius:14).padding(.horizontal,22).padding(.bottom,14)
             ScrollView {
                 VStack(alignment:.leading,spacing:16) {
-                    VStack(alignment:.leading,spacing:13) {
-                        sectionTitle("外观主题",symbol:"paintpalette")
-                        HStack(spacing:12) {
-                            ForEach(AppTheme.allCases){choice in ThemeOption(choice:choice,appearance:appearance)}
-                        }
-                        Text("点击立即切换，自动记住你的选择。").font(.system(size:11)).foregroundStyle(palette.muted)
-                    }.padding(18).consoleCard()
-                    VStack(alignment:.leading,spacing:14) {
-                        sectionTitle("AI 大脑 · 多模型配置",symbol:"cpu")
-                        Picker("已保存配置",selection:Binding(get:{service.preferences.selectedProfileID ?? ""},set:{service.selectModel($0)})) {
-                            ForEach(service.preferences.profiles ?? []){profile in Text(profile.name).tag(profile.id)}
-                        }
-                        HStack {
-                            Button("新增配置"){service.addProfile()}
-                            Button("移除配置"){service.removeProfile()}.disabled((service.preferences.profiles?.count ?? 0)<=1)
-                            Spacer()
-                            Button("保存此模型"){do{try service.saveProfile()}catch{service.settingsNotice=error.localizedDescription}}
-                        }.buttonStyle(ConsoleButton()).disabled(service.uiBusy)
-                        field("配置名称",text:$service.profileNameDraft)
-                        Picker("模型来源",selection:$service.preferences.provider){Text("云端 · OpenAI 兼容").tag("cloud");Text("本地 · Ollama / 兼容服务").tag("local")}
-                        if service.preferences.provider == "cloud" {
-                            field("服务地址",text:$service.preferences.cloudURL)
-                            field("模型名称",text:$service.preferences.cloudModel)
-                        } else {
-                            field("服务地址",text:$service.preferences.localURL)
-                            field("模型名称",text:$service.preferences.localModel)
-                        }
-                        VStack(alignment:.leading,spacing:6){Text("API KEY").font(.system(size:9,weight:.medium,design:.monospaced)).foregroundStyle(palette.muted);SecureField("留空保留已有 Key",text:$service.keyDraft).textFieldStyle(.plain).padding(11).background(palette.field,in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).strokeBorder(palette.contentEdge))}
-                        Toggle("所有 AI 修改先确认",isOn:$service.preferences.confirmAll).toggleStyle(.switch).controlSize(.small)
-                        Text("本地模型默认先确认每次修改。Key 以明文保存在本机应用配置目录，仅当前用户可读写，不随任务备份导出。使用云模型时，会将输入、近期操作和最多100项相关任务的标题、状态及分组发送给所选服务；不发送任务备注。无需配置模型也可手动管理任务。").font(.system(size:10)).foregroundStyle(palette.muted)
-                    }.padding(18).consoleCard()
-                    VStack(alignment:.leading,spacing:13) {
-                        sectionTitle("运行与通知",symbol:"bell.badge")
-                        Toggle("开机自启动",isOn:Binding(get:{service.loginEnabled},set:{service.setLogin($0)})).toggleStyle(.switch)
-                        if !service.loginNotice.isEmpty {Text(service.loginNotice).font(.system(size:10)).foregroundStyle(palette.muted)}
-                        Text("到期任务使用系统提醒事项通知，Mac 关闭后仍可由已同步的 iPhone 提醒；请允许系统提醒事项通知。").font(.system(size:11)).foregroundStyle(palette.muted)
-                        Toggle("Bark 额外推送",isOn:$service.barkPreferences.enabled).toggleStyle(.switch)
-                        field("Bark 服务地址",text:$service.barkPreferences.baseURL)
-                        SecureField("Device Key（留空保留已有配置）",text:$service.barkKeyDraft).textFieldStyle(.roundedBorder)
-                        Text("Bark 为可选附加通道，可能与系统通知同时到达。仅在 App 运行且 Mac 唤醒时检查；API 接受不代表手机送达。").font(.system(size:10)).foregroundStyle(palette.muted)
-                        Button("发送 Bark 测试通知"){Task{await service.testBark()}}.buttonStyle(ConsoleButton())
-                        Text(service.barkNotice).font(.system(size:10)).foregroundStyle(palette.muted)
-                    }.padding(18).consoleCard()
-                    VStack(alignment:.leading,spacing:13) {
-                        sectionTitle("任务同步",symbol:"arrow.triangle.2.circlepath")
-                        if !service.sourceChoices.isEmpty {
-                            Picker("提醒事项账户",selection:Binding(get:{service.preferences.sourceIdentifier ?? ""},set:{service.preferences.sourceIdentifier=$0})) {
-                                ForEach(service.sourceChoices,id:\.id){choice in Text(choice.title).tag(choice.id)}
-                            }
-                            Button("重新连接所选账户"){Task{await service.connect()}}.buttonStyle(ConsoleButton())
-                        }
-                        Text(service.syncNote).font(.system(size:11)).foregroundStyle(palette.muted).fixedSize(horizontal:false,vertical:true)
-                        if !service.metadataSyncEnabled {
-                            HStack {
-                                Button("以此机初始化双机同步"){Task{await service.configureMetadataSync(create:true)}}
-                                Button("加入已有双机同步"){Task{await service.configureMetadataSync(create:false)}}
-                            }.buttonStyle(ConsoleButton()).disabled(service.uiBusy || !service.isConnected)
-                        }
-                        Text("扩展日志、编号与回收快照存入自己的 iCloud Drive；Key 不参与同步。新设备先在主设备初始化，再加入。离线新增使用不同编号段；真正冲突仍暂停修改。云端历史快照如同旧备份，彻底删除任务不会擦除既有历史文件。").font(.system(size:10)).foregroundStyle(palette.muted)
-                    }.padding(18).consoleCard()
-                    VStack(alignment:.leading,spacing:13) {
-                        sectionTitle("数据与恢复",symbol:"externaldrive")
-                        HStack {
-                            Button("导出备份"){Task{await service.exportBackup()}}
-                            Button("恢复备份"){service.chooseBackup()}
-                        }.buttonStyle(ConsoleButton()).disabled(service.uiBusy || !service.isConnected || service.restorePending)
-                        if service.restorePending {Button("继续未完成的恢复"){Task{await service.continueBackupRestore()}}.buttonStyle(ConsoleButton(prominent:true)).disabled(service.uiBusy)}
-                        HStack {
-                            Button("同步历史回收站"){Task{await service.repairLegacyTrash()}}
-                            Button("补齐系统提醒"){Task{await service.repairFutureAlarms()}}
-                        }.buttonStyle(ConsoleButton()).disabled(service.uiBusy || !service.isConnected || service.restorePending)
-                        Text("历史回收站修复会先保存恢复快照，再移除系统中的对应提醒。补齐提醒只处理未来到期且没有闹钟的未完成任务。备份含私密任务内容，不含 Key 或微信会话；扩展数据目前保存在本机，换机前请导出。").font(.system(size:10)).foregroundStyle(palette.muted)
-                        Text(service.dataNotice).font(.system(size:11)).foregroundStyle(palette.accent).textSelection(.enabled)
-                    }.padding(18).consoleCard()
-                    UpdateSettingsSection(service:service)
-                    VStack(alignment:.leading,spacing:13) {
-                        HStack{sectionTitle("微信入口（可选）",symbol:"bubble.left.and.bubble.right");Spacer();Text(service.wechatLabel).font(.system(size:10)).foregroundStyle(palette.accent)}
-                        Text("菜单栏任务管理无需常开 Mac。微信机器人仅在本 App 与执行器运行时可用。").font(.system(size:10)).foregroundStyle(palette.muted)
-                        Toggle("已停止其他设备上的微信执行器",isOn:$service.oldOwnerStopped).font(.system(size:11)).toggleStyle(.checkbox)
-                        HStack {
-                            Button("连接微信"){service.startWeChat()}.disabled(!service.oldOwnerStopped || service.wechatProcess?.isRunning == true)
-                            Button("停止连接"){service.stopWeChat()}
-                        }.buttonStyle(ConsoleButton())
-                        if let image=service.wechatQRCode {
-                            Image(nsImage:image).interpolation(.none).resizable().scaledToFit().frame(width:180,height:180).padding(12).background(.white,in:RoundedRectangle(cornerRadius:12)).frame(maxWidth:.infinity)
-                            Text("用微信扫码，确认连接此设备。").font(.system(size:11)).foregroundStyle(palette.muted).frame(maxWidth:.infinity)
-                        }
-                    }.padding(18).consoleCard()
-                    if !service.settingsNotice.isEmpty {Text(service.settingsNotice).font(.system(size:11)).foregroundStyle(palette.warning).textSelection(.enabled)}
+                    switch service.settingsTab {
+                    case "ai":aiTab
+                    case "sync":syncTab
+                    case "wechat":wechatTab
+                    case "update":UpdateSettingsSection(service:service)
+                    default:generalTab
+                    }
+                    if !service.settingsNotice.isEmpty {Text(service.settingsNotice).font(.system(size:12)).foregroundStyle(palette.warning).textSelection(.enabled)}
                 }.padding(.horizontal,22).padding(.bottom,22)
             }.scrollIndicators(.hidden)
         }}.frame(width:510,height:610).themeScope(appearance.selected)
+        // Closing by Esc or the window button keeps edits too; toggles already apply instantly.
+        .onDisappear{persist()}
         .alert("恢复备份？",isPresented:$service.backupRestorePresented) {
             Button("取消",role:.cancel){service.proposedBackup=nil}
             Button("恢复"){Task{await service.confirmBackupRestore()}}
@@ -614,17 +650,147 @@ struct SettingsView:View {
             Text("将合并 \(service.proposedBackup?.snapshots.count ?? 0) 项任务及 \(service.proposedBackup?.trash.count ?? 0) 项回收记录；已有系统任务内容保留。会先保存本机安全副本，恢复期间暂停任务修改。")
         }
     }
-    private func sectionTitle(_ title:String,symbol:String)->some View {Label(title,systemImage:symbol).font(.system(size:13,weight:.semibold)).foregroundStyle(palette.accent)}
-    private func field(_ title:String,text:Binding<String>)->some View {
-        VStack(alignment:.leading,spacing:6){Text(title).font(.system(size:10)).foregroundStyle(palette.muted);TextField(title,text:text).textFieldStyle(.plain).font(.system(size:12,design:.monospaced)).padding(11).background(palette.field,in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).strokeBorder(palette.contentEdge))}
+    private var generalTab:some View {
+        VStack(alignment:.leading,spacing:16) {
+            VStack(alignment:.leading,spacing:13) {
+                sectionTitle("外观",symbol:"paintpalette")
+                HStack(spacing:12){ForEach(AppTheme.allCases){choice in ThemeOption(choice:choice,appearance:appearance)}}
+            }.padding(18).consoleCard()
+            VStack(alignment:.leading,spacing:12) {
+                sectionTitle("使用习惯",symbol:"hand.tap")
+                switchRow("每天首次打开时，AI 整理今日待办",$service.dailyBriefingEnabled)
+                note("显示在输入框下方，也会记入对话。使用云端模型时，会把相关任务的标题、截止时间、状态和分组发给所选服务。")
+                switchRow("全局快捷键 \(GlobalHotKey.display) 快速记录",$service.hotKeyEnabled)
+                note("在任何 App 中按下，打开记事喵并定位到输入框。")
+                switchRow("菜单栏显示逾期与今天到期的数量",$service.menuBadgeEnabled)
+                switchRow("开机自启动",Binding(get:{service.loginEnabled},set:{service.setLogin($0)}))
+                if !service.loginNotice.isEmpty {note(service.loginNotice)}
+            }.padding(18).consoleCard()
+            VStack(alignment:.leading,spacing:12) {
+                sectionTitle("到期通知",symbol:"bell.badge")
+                note("到期任务由系统提醒事项通知；已同步到 iPhone 的任务，Mac 关机后也会提醒。")
+                switchRow("另外用 Bark 推送到手机",$service.barkPreferences.enabled)
+                if service.barkPreferences.enabled {
+                    field("Bark 服务地址",text:$service.barkPreferences.baseURL)
+                    SecureField("Device Key（留空保留已有配置）",text:$service.barkKeyDraft).textFieldStyle(.roundedBorder)
+                    HStack{Button("发送测试通知"){Task{await service.testBark()}}.buttonStyle(ConsoleButton());Text(service.barkNotice).font(.system(size:11)).foregroundStyle(palette.muted)}
+                    note("只在记事喵运行且 Mac 唤醒时检查，可能与系统通知同时到达。")
+                }
+            }.padding(18).consoleCard()
+        }
     }
-    private func save() {
+    private var aiTab:some View {
+        VStack(alignment:.leading,spacing:14) {
+            sectionTitle("模型配置",symbol:"cpu")
+            HStack {
+                Picker("当前使用",selection:Binding(get:{service.preferences.selectedProfileID ?? ""},set:{service.selectModel($0)})) {
+                    ForEach(service.preferences.profiles ?? []){profile in Text(profile.name).tag(profile.id)}
+                }
+                Button("新增"){service.addProfile()}.buttonStyle(ConsoleButton())
+                Button("移除"){service.removeProfile()}.buttonStyle(ConsoleButton()).disabled((service.preferences.profiles?.count ?? 0)<=1)
+            }.disabled(service.uiBusy)
+            field("配置名称",text:$service.profileNameDraft)
+            Picker("模型来源",selection:$service.preferences.provider){Text("云端 · OpenAI 兼容").tag("cloud");Text("本地 · Ollama / 兼容服务").tag("local")}
+            if service.preferences.provider == "cloud" {
+                field("服务地址",text:$service.preferences.cloudURL)
+                field("模型 ID",text:$service.preferences.cloudModel)
+            } else {
+                field("服务地址",text:$service.preferences.localURL)
+                field("模型 ID",text:$service.preferences.localModel)
+            }
+            VStack(alignment:.leading,spacing:6) {
+                HStack{Text("API Key").font(.system(size:11)).foregroundStyle(palette.muted);Spacer();Text(service.savedKeyHint ?? "尚未保存 Key").font(.system(size:11,design:.monospaced)).foregroundStyle(service.savedKeyHint == nil ? palette.warning : palette.success)}
+                SecureField(service.savedKeyHint == nil ? "填写 Key" : "留空保留已保存的 Key",text:$service.keyDraft).textFieldStyle(.plain).padding(11).background(palette.field,in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).strokeBorder(palette.contentEdge))
+            }
+            HStack {
+                Button("保存此配置"){do{try service.saveProfile()}catch{service.settingsNotice=error.localizedDescription}}.buttonStyle(ConsoleButton(prominent:true))
+                Button("测试连接"){Task{await service.testModel()}}.buttonStyle(ConsoleButton())
+                Text(service.modelTestNotice).font(.system(size:11)).foregroundStyle(service.modelTestNotice.hasPrefix("连接成功") ? palette.success : palette.muted).lineLimit(2)
+            }.disabled(service.uiBusy)
+            switchRow("AI 修改任务前先让我确认",$service.preferences.confirmAll)
+            note("本地模型理解偶有偏差，建议开启。查询类请求不需要确认。")
+            note("Key 只保存在这台 Mac 的应用配置目录，不进入备份或同步。使用云端模型时，会发送你的输入、近期操作和最多 100 项相关任务的标题、状态与分组；不发送备注。不配置模型也可以手动管理任务。")
+        }.padding(18).consoleCard()
+    }
+    private var syncTab:some View {
+        VStack(alignment:.leading,spacing:16) {
+            VStack(alignment:.leading,spacing:12) {
+                sectionTitle("提醒事项账户",symbol:"checklist")
+                if !service.sourceChoices.isEmpty {
+                    Picker("账户",selection:Binding(get:{service.preferences.sourceIdentifier ?? ""},set:{service.preferences.sourceIdentifier=$0})) {
+                        ForEach(service.sourceChoices,id:\.id){choice in Text(choice.title).tag(choice.id)}
+                    }
+                    Button("重新连接所选账户"){Task{await service.connect()}}.buttonStyle(ConsoleButton())
+                } else {
+                    Button("授权并连接"){Task{await service.connect()}}.buttonStyle(ConsoleButton(prominent:true))
+                }
+                note("选 iCloud 账户后，任务会同步到 iPhone 的提醒事项。")
+            }.padding(18).consoleCard()
+            VStack(alignment:.leading,spacing:12) {
+                sectionTitle("两台 Mac 同步",symbol:"macbook.and.iphone")
+                Text(service.syncNote).font(.system(size:12)).foregroundStyle(palette.muted).fixedSize(horizontal:false,vertical:true)
+                if !service.metadataSyncEnabled {
+                    HStack {
+                        Button("在这台 Mac 上开启"){Task{await service.configureMetadataSync(create:true)}}
+                        Button("加入另一台 Mac"){Task{await service.configureMetadataSync(create:false)}}
+                    }.buttonStyle(ConsoleButton()).disabled(service.uiBusy || !service.isConnected)
+                    note("在常用的那台先点「开启」，另一台再点「加入」。任务状态、进度、编号和回收站经你自己的 iCloud Drive 同步，Key 不同步。")
+                }
+            }.padding(18).consoleCard()
+            VStack(alignment:.leading,spacing:12) {
+                sectionTitle("备份与恢复",symbol:"externaldrive")
+                HStack {
+                    Button("导出备份"){Task{await service.exportBackup()}}
+                    Button("从备份恢复"){service.chooseBackup()}
+                }.buttonStyle(ConsoleButton()).disabled(service.uiBusy || !service.isConnected || service.restorePending)
+                if service.restorePending {Button("继续未完成的恢复"){Task{await service.continueBackupRestore()}}.buttonStyle(ConsoleButton(prominent:true)).disabled(service.uiBusy)}
+                note("备份包含全部任务与本机记录，不含 Key 或微信会话；请妥善保存。")
+                if !service.dataNotice.isEmpty {Text(service.dataNotice).font(.system(size:12)).foregroundStyle(palette.accent).textSelection(.enabled)}
+                DisclosureGroup("高级修复",isExpanded:$disclosure.advanced) {
+                    VStack(alignment:.leading,spacing:10) {
+                        HStack {
+                            Button("同步旧版回收站"){Task{await service.repairLegacyTrash()}}
+                            Button("补齐到期提醒"){Task{await service.repairFutureAlarms()}}
+                        }.buttonStyle(ConsoleButton()).disabled(service.uiBusy || !service.isConnected || service.restorePending)
+                        note("仅在遇到问题时使用。前者先保存恢复快照，再移除系统中对应的旧提醒；后者只为未来到期、尚无闹钟的未完成任务补上提醒。")
+                    }.padding(.top,8)
+                }.font(.system(size:12)).foregroundStyle(palette.muted)
+            }.padding(18).consoleCard()
+        }
+    }
+    private var wechatTab:some View {
+        VStack(alignment:.leading,spacing:13) {
+            HStack{sectionTitle("微信入口（可选）",symbol:"bubble.left.and.bubble.right");Spacer();Text(service.wechatLabel).font(.system(size:11)).foregroundStyle(palette.accent)}
+            note("在微信里给记事喵发消息即可查询和安排任务。需要这台 Mac 开着记事喵，并且同一微信只在一台 Mac 上连接。")
+            Toggle("其他设备上的微信连接已停止",isOn:$service.oldOwnerStopped).font(.system(size:12)).toggleStyle(.checkbox)
+            HStack {
+                Button(service.wechatState == "stopped" ? "连接微信" : "重新连接"){service.stopWeChat(preserveAutoConnect:true);service.startWeChat()}.buttonStyle(ConsoleButton(prominent:true)).disabled(!service.oldOwnerStopped || service.wechatState == "connected")
+                Button("断开"){service.stopWeChat()}.buttonStyle(ConsoleButton()).disabled(service.wechatState == "stopped")
+            }
+            if let image=service.wechatQRCode {
+                Image(nsImage:image).interpolation(.none).resizable().scaledToFit().frame(width:180,height:180).padding(12).background(.white,in:RoundedRectangle(cornerRadius:12)).frame(maxWidth:.infinity)
+                Text("用微信扫码，确认连接此设备。").font(.system(size:12)).foregroundStyle(palette.muted).frame(maxWidth:.infinity)
+            }
+        }.padding(18).consoleCard()
+    }
+    private func sectionTitle(_ title:String,symbol:String)->some View {Label(title,systemImage:symbol).font(.system(size:14,weight:.semibold)).foregroundStyle(palette.accent)}
+    /// Label left, switch right-aligned, so the switches line up in one column.
+    private func switchRow(_ title:String,_ isOn:Binding<Bool>)->some View {
+        HStack{Text(title).font(.system(size:13));Spacer(minLength:12);Toggle(title,isOn:isOn).labelsHidden().toggleStyle(.switch)}
+    }
+    private func note(_ text:String)->some View {Text(text).font(.system(size:11)).lineSpacing(2).foregroundStyle(palette.muted).fixedSize(horizontal:false,vertical:true)}
+    private func field(_ title:String,text:Binding<String>)->some View {
+        VStack(alignment:.leading,spacing:6){Text(title).font(.system(size:11)).foregroundStyle(palette.muted);TextField(title,text:text).textFieldStyle(.plain).font(.system(size:12,design:.monospaced)).padding(11).background(palette.field,in:RoundedRectangle(cornerRadius:8)).overlay(RoundedRectangle(cornerRadius:8).strokeBorder(palette.contentEdge))}
+    }
+    /// Saves model fields as a profile when complete; otherwise only the general preferences.
+    @discardableResult private func persist()->Bool {
         do {
             if service.preferences.model.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty {try service.savePreferences()}
             else {try service.saveProfile()}
-            dismiss()
-        } catch {service.settingsNotice=error.localizedDescription}
+            return true
+        } catch {service.settingsNotice=error.localizedDescription;return false}
     }
+    private func finish() {if persist() {dismiss()}}
 }
 
 struct TaskEditorView:View {
