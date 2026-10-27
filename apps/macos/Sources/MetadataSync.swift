@@ -131,12 +131,11 @@ struct SharedMetadataStore {
                 if let old=ops[op.operationId],old != op{throw MetadataSyncError.invalid("操作ID内容冲突。")};ops[op.operationId]=op
             }
         }
-        // Validate the complete union before committing any imported operation.
-        let temporary=FileManager.default.temporaryDirectory.appendingPathComponent("taskcat-sync-check-"+UUID().uuidString)
-        defer{try? FileManager.default.removeItem(at:temporary)}
-        let check=try OperationJournal(directory:temporary)
-        for op in ops.values {_=try check.append(op)}
-        let projection=try check.project()
+        // Validate the complete union before committing any imported operation. This used to
+        // replay every operation into a temporary on-disk journal (two fsyncs each, every 12 s);
+        // the same decode and projection checks run in memory now.
+        for op in ops.values {_=try MetadataOperation.decode(op.canonicalData())}
+        let projection=try OperationJournal.project(ops)
         guard projection.missingParents.isEmpty else{throw MetadataSyncError.waiting}
         func mergeNumbers(_ source:[String:Int])throws {
             for (id,n) in source {

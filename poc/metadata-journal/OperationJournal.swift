@@ -177,8 +177,10 @@ struct OperationJournal {
         return result
     }
 
-    func project() throws -> JournalProjection {
-        let byID = try load()
+    func project() throws -> JournalProjection { try Self.project(try load()) }
+
+    /// Same projection over operations already in memory, e.g. to validate a merge before writing.
+    static func project(_ byID: [String: MetadataOperation]) throws -> JournalProjection {
         let ids = Set(byID.keys)
         let parentIDs = Set(byID.values.flatMap(\.parents))
         let missing = parentIDs.subtracting(ids).sorted()

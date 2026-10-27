@@ -1,5 +1,5 @@
 """Exercise the real immutable sync implementation in isolated two-device directories."""
-import subprocess
+import os,subprocess
 from pathlib import Path
 import pytest
 ROOT=Path(__file__).resolve().parents[1]
@@ -26,6 +26,21 @@ import CryptoKit
   let first=try store.exchange(actor:a,operations:[task:create],numbers:[task:7],trash:[])
   let second=try store.exchange(actor:b,operations:[:],numbers:[task:7],trash:[])
   assert(second.operations[task]==create && second.numbers[task]==7 && second.lane==1 && first.lane==0)
+  if mode=="repeat-cost" {
+   // Bytes this process writes to disk across unchanged exchanges, as the 12 s timer would do.
+   func written()->UInt64 {
+    var info=rusage_info_v4()
+    _=withUnsafeMutablePointer(to:&info){$0.withMemoryRebound(to:rusage_info_t?.self,capacity:1){proc_pid_rusage(getpid(),RUSAGE_INFO_V4,$0)}}
+    return info.ri_diskio_byteswritten
+   }
+   let ops=Dictionary(uniqueKeysWithValues:(0..<20).map{i->(String,MetadataOperation) in
+    let id=String(format:"00000000-0000-4000-8000-%012d",100+i);return (id,op(id,task,a,i==0 ? [task] : [String(format:"00000000-0000-4000-8000-%012d",99+i)],["progress":.number(50)]))
+   }).merging([task:create]){x,_ in x}
+   _=try store.exchange(actor:a,operations:ops,numbers:[task:7],trash:[])
+   let before=written()
+   for _ in 0..<5 {_=try store.exchange(actor:a,operations:ops,numbers:[task:7],trash:[])}
+   print(written()-before);return
+  }
   var rejected=false
   do {
    if mode=="bootstrap" {assert(second.operations[task]?.patch["progress"] == .number(40))}
@@ -92,3 +107,11 @@ def test_real_sync_contract(sync_cli,tmp_path,mode):
     r=subprocess.run([str(sync_cli),mode,str(tmp_path/'shared')],capture_output=True,text=True,timeout=30)
     assert r.returncode==0,r.stderr
     assert r.stdout.strip()=='pass'
+
+
+def test_unchanged_exchange_writes_nothing(sync_cli,tmp_path):
+    # Validation used to replay every operation into a temporary on-disk journal on each sync
+    # (two fsyncs per operation every 12 s, gigabytes per day). It now runs in memory.
+    r=subprocess.run([str(sync_cli),'repeat-cost',str(tmp_path/'shared')],capture_output=True,text=True,timeout=60)
+    assert r.returncode==0,r.stderr
+    assert int(r.stdout.strip())<64*1024,f'{r.stdout.strip()} bytes written by 5 unchanged exchanges'
