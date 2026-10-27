@@ -1,161 +1,71 @@
 (() => {
-  const $ = id => document.getElementById(id);
-  const input = $('demo-input'), send = $('demo-send');
-  const tasks = [
-    {title:'整理周会分享材料',group:'工作',when:'明天 10:00',bucket:'tomorrow',progress:40,done:false},
-    {title:'看一看周末的展览',group:'生活',when:'周六 14:00',bucket:'week',done:false},
-    {title:'给猫咪补充口粮',group:'收件箱',when:'',bucket:'none',done:false}
-  ];
-  // Mirrors the app's timeline: due-date buckets in a fixed order, empty ones skipped.
-  const buckets=[['overdue','已逾期'],['today','今天'],['tomorrow','明天'],['week','7 天内'],['later','以后'],['none','未定时间']];
-  const meta=task=>task.group+(task.when?' · '+task.when:'');
-  let busy = false;
-  let signalTimer;
-  const motionDelay=ms=>new Promise(resolve=>setTimeout(resolve,matchMedia('(prefers-reduced-motion: reduce)').matches?0:ms));
-  function signal(text) {
-    clearTimeout(signalTimer);$('bridge-label').textContent=text;$('linked-demo').classList.add('syncing');
-    signalTimer=setTimeout(()=>$('linked-demo').classList.remove('syncing'),1800);
-  }
-  const examples = {
-    add: {input:'明晚八点提醒我读书', feedback:'已新增「读书」· 明天 20:00（演示时间）'},
-    reschedule: {input:'周会材料改到周五下午', feedback:'已将「整理周会分享材料」改到周五 15:00（演示时间，实际修改前可核对）'},
-    complete: {input:'猫粮买好了，标记完成', feedback:'已完成「给猫咪补充口粮」。又少一件惦记的事。'}
-  };
-  const update = () => {send.disabled = busy || wxBusy || !input.value.trim();};
-  const el=(tag,className,text)=>{const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=text;return node;};
-  const taskRow = (task,i,changed) => {
-      const row = el('div',`task${task.done?' done':''}${i===changed?' changed':''}${task.progress&&!task.done?' doing':''}`);row.dataset.index=i;
-      const check = el('span','task-check');
-      if(task.progress&&!task.done)check.style.setProperty('--p',task.progress);
-      const content = el('div'), title = el('strong','',task.title), info = el('small');
-      if(task.when){const due=el('span',`due ${task.bucket}`,task.when);info.append(due);}
-      const group=el('span','group',task.group);group.dataset.group=task.group;info.append(group,el('span','number','#'+(i+1)));
-      content.append(title,info);
-      row.append(check,content);
-      if(task.progress&&!task.done)row.append(el('span','status',`进行中 ${task.progress}%`));
-      check.setAttribute('role','button');check.setAttribute('tabindex','0');check.setAttribute('aria-label',(task.done?'重新打开：':'完成：')+task.title);
-      const toggle=()=>{if(busy || wxBusy)return;task.done=!task.done;render(i);signal('Mac 面板已更新 · 微信查询可看到变化');$('demo-feedback').textContent='已在 Mac 演示面板'+(task.done?'完成':'重新打开')+'「'+task.title+'」';};
-      check.addEventListener('click',toggle);check.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();toggle();}});
-      return row;
-  };
-  const render = changed => {
-    const nodes=[];
-    buckets.forEach(([key,label])=>{
-      const members=tasks.map((task,i)=>({task,i})).filter(item=>item.task.bucket===key);
-      if(!members.length)return;
-      const head=el('div',`task-section ${key}`);head.append(el('span','',label),el('b','',String(members.length)));
-      nodes.push(head,...members.map(({task,i})=>taskRow(task,i,changed)));
-    });
-    $('demo-tasks').replaceChildren(...nodes);
-    $('demo-count').textContent=tasks.filter(t=>!t.done).length;
-    if(Number.isInteger(changed))requestAnimationFrame(()=>{
-      const list=$('demo-tasks'),row=list.querySelector(`[data-index="${changed}"]`);if(!row)return;
-      const bounds=list.getBoundingClientRect(),target=row.getBoundingClientRect();
-      if(target.bottom>bounds.bottom)list.scrollTop+=target.bottom-bounds.bottom;
-      else if(target.top<bounds.top)list.scrollTop-=bounds.top-target.top;
-    });
-  };
-  async function run(key) {
-    if (busy || wxBusy) return;
-    const example=examples[key];if(!example)return;
-    busy=true;input.value=example.input;update();$('thinking').hidden=false;
-    if($('composer').hidden){$('composer').hidden=false;$('collapse').setAttribute('aria-expanded','true');$('collapse').textContent='⌃';}
-    await new Promise(resolve=>setTimeout(resolve,matchMedia('(prefers-reduced-motion: reduce)').matches?0:850));
-    let changed=0;
-    if(key==='add'){changed=tasks.findIndex(t=>t.title==='读书');if(changed<0){tasks.push({title:'读书',group:'收件箱',when:'明天 20:00',bucket:'tomorrow',done:false});changed=tasks.length-1;}}
-    if(key==='reschedule')Object.assign(tasks[0],{when:'周五 15:00',bucket:'week'});
-    if(key==='complete'){tasks[2].done=true;changed=2;}
-    render(changed);$('thinking').hidden=true;$('demo-feedback').textContent=example.feedback;input.value='';busy=false;update();signal('Mac 面板已更新 · 微信查询可看到变化');
-  }
-  document.querySelectorAll('[data-example]').forEach(button=>button.addEventListener('click',()=>run(button.dataset.example)));
-  input.addEventListener('input',update);
-  const submit=()=>{const key=Object.keys(examples).find(k=>examples[k].input===input.value.trim());if(key)run(key);else $('demo-feedback').textContent='这是浏览器本地示例。请点击下方任一句示例体验；不会把输入发送给模型。';};
-  send.addEventListener('click',submit);input.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();if(!send.disabled)submit();}});
-  $('theme-toggle').addEventListener('click',()=>{$('demo-app').classList.toggle('dark');$('theme-toggle').setAttribute('aria-label',$('demo-app').classList.contains('dark')?'切换浅色演示':'切换深色演示');});
-  $('collapse').addEventListener('click',()=>{if(busy)return;const collapsed=!$('composer').hidden;$('composer').hidden=collapsed;$('collapse').setAttribute('aria-expanded',String(!collapsed));$('collapse').textContent=collapsed?'⌄':'⌃';});
+  document.documentElement.classList.add('js');
 
-  // Shared synthetic task state: no network, login, real messaging or AI call.
-  const thread=$('wx-messages'), wxInput=$('wx-input'), wxSend=$('wx-send');
-  let wxPending=null, wxCode=0, wxModel='云端模型 · 示例配置',wxBusy=false;
-  const wxUpdate=()=>{wxSend.disabled=wxBusy || busy || !wxInput.value.trim();$('wx-confirm').disabled=wxBusy || busy;update();};
-  function appendMessage(text,outgoing=false) {
-    const row=document.createElement('div');row.className='wechat-message'+(outgoing?' outgoing':'');
-    const avatar=document.createElement('span');avatar.className='wx-avatar';avatar.setAttribute('aria-hidden','true');
-    if(outgoing)avatar.textContent='我';
-    else {const image=document.createElement('img');image.src='assets/taskcat.png';image.alt='';image.width=26;image.height=26;avatar.append(image);}
-    const bubble=document.createElement('div');bubble.className='wx-bubble';bubble.textContent=text;
-    row.append(avatar,bubble);thread.append(row);
-    thread.scrollTop=outgoing ? thread.scrollHeight : row.offsetTop-thread.offsetTop;
+  // Reveal sections as they are reached; IntersectionObserver, no scroll listeners.
+  const items=document.querySelectorAll('.reveal');
+  if('IntersectionObserver' in window){
+    const io=new IntersectionObserver(entries=>entries.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}}),{rootMargin:'0px 0px -8% 0px',threshold:.12});
+    items.forEach(el=>io.observe(el));
+  } else items.forEach(el=>el.classList.add('in'));
+
+  // WeChat demo: runs entirely in the browser on sample tasks. No network, model or WeChat.
+  const thread=document.getElementById('thread'),form=document.getElementById('compose'),input=document.getElementById('say');
+  if(!thread||!form)return;
+  const tasks=[
+    {n:1,title:'提交 Q4 产品方案',meta:'进行中 60% · 工作',when:'已逾期 1 天',done:false},
+    {n:2,title:'和设计确认官网首屏',meta:'等待 · 工作',when:'明天 17:00',done:false},
+    {n:3,title:'预约年度体检',meta:'生活',when:'明天 09:30',done:false},
+    {n:5,title:'整理周会纪要发给团队',meta:'工作',when:'周五 10:00',done:false}
+  ];
+  let pending=null,code=0,model='本地 Ollama';
+  const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const wait=ms=>new Promise(r=>setTimeout(r,reduce?0:ms));
+  function add(text,me=false){
+    const m=document.createElement('div');m.className='msg'+(me?' me':'');m.textContent=text;thread.append(m);
+    thread.scrollTop=thread.scrollHeight;
   }
-  function listText() {
-    const active=tasks.map((task,index)=>({task,number:index+1})).filter(item=>!item.task.done);
-    return `当前有 ${active.length} 个待办\n\n`+active.map(({task,number})=>`${number}、${task.title}\n   ${meta(task)}`).join('\n\n')+`\n\n回复「任务编号 + 操作」，如：任务${active[0]?.number ?? 1}标记完成。`;
+  function list(){
+    const open=tasks.filter(t=>!t.done);
+    if(!open.length)return '本周的事都处理完了。';
+    return `本周还有 ${open.length} 项\n\n`+open.map(t=>`${t.n}、${t.title}\n   ${t.when} · ${t.meta}`).join('\n\n')+'\n\n回复「任务编号 + 操作」，如：任务3改到下周一。';
   }
-  function setPending(value) {
-    wxPending=value;$('wx-confirm').hidden=!value;
-    $('stage-pending').hidden=!value;
-    if(value){
-      const verb=value.kind==='add'?'新增任务':value.kind==='reschedule'?'调整时间':'标记完成';
-      $('wx-confirm').textContent='确认'+value.code+' · '+verb;
-      $('pending-label').textContent='待确认'+value.code+' · '+verb;
+  function reply(text){
+    const confirm=text.match(/^(确认|取消)\s*(\d+)$/),move=text.match(/任务\s*(\d+).*改到(.+)$/),done=text.match(/任务\s*(\d+)\s*(?:标记)?完成/);
+    if(confirm){
+      if(!pending||Number(confirm[2])!==pending.code)return '没有找到这条待确认的操作。';
+      const p=pending;pending=null;
+      if(confirm[1]==='取消')return '已取消，任务没有改动。';
+      if(p.kind==='move'){p.task.when=p.when;return `已调整任务${p.task.n}\n\n${p.task.title}\n${p.when}`;}
+      p.task.done=true;return `已完成任务${p.task.n}\n\n${p.task.title}\n又少一件惦记的事。`;
     }
-  }
-  async function wechat(text) {
-    text=text.trim();if(!text || wxBusy || busy)return;wxBusy=true;appendMessage(text,true);wxInput.value='';wxUpdate();
-    signal('微信发来一句话 · 记事喵正在整理');
-    $('thinking').hidden=false;await motionDelay(600);$('thinking').hidden=true;
-    let reply;
-    const confirmation=text.match(/^(确认|取消)\s*(\d+)$/), completion=text.match(/任务\s*(\d+)\s*(?:标记)?完成/),reschedule=text.match(/任务\s*(\d+).*改到/);
-    if(confirmation) {
-      if(!wxPending || Number(confirmation[2])!==wxPending.code)reply='没有找到这条待确认操作。请先选择一项任务，再核对短编号。';
-      else if(confirmation[1]==='取消'){setPending(null);reply='已取消，示例任务未修改。';}
-      else {
-        const pending=wxPending;let index=pending.index;
-        if(pending.kind==='add'){index=tasks.length;tasks.push({title:'读书',group:'收件箱',when:'明天 20:00',bucket:'tomorrow',done:false});reply=`已新增任务${index+1}\n\n读书\n明天 20:00（演示时间）`;}
-        else if(pending.kind==='reschedule'){Object.assign(tasks[index],{when:'周五 15:00',bucket:'week'});reply=`已调整任务${index+1}\n\n${tasks[index].title}\n周五 15:00（演示时间）`;}
-        else {tasks[index].done=true;reply=`已完成任务${index+1}\n\n${tasks[index].title}\n已完成`;}
-        setPending(null);render(index);signal('微信操作已确认 · Mac 待办同步更新');$('demo-feedback').textContent='来自微信的操作已更新同一份示例待办。';
-      }
-    } else if(/读书/.test(text) && /明|提醒|新增/.test(text)) {
-      const code=++wxCode;setPending({code,kind:'add'});reply=`待确认${code}\n\n新增「读书」\n明天 20:00（演示时间）\n\n回复「确认${code}」安排。`;signal('微信提出新安排 · 两端显示待确认');
-    } else if(reschedule) {
-      const index=Number(reschedule[1])-1,task=tasks[index];
-      if(!task)reply='没有找到这个任务编号，请先查看待办。';
-      else {const code=++wxCode;setPending({code,index,kind:'reschedule'});reply=`待确认${code}\n\n${task.title}\n改为周五 15:00（演示时间）\n\n回复「确认${code}」调整。`;signal('微信提出改期 · Mac 显示待确认');}
-    } else if(completion) {
-      const index=Number(completion[1])-1,task=tasks[index];
-      if(!task)reply='没有找到这个任务编号。请先发送“查看待办”。';
-      else if(task.done)reply=`任务${index+1}已经完成，未重复操作。`;
-      else {const code=++wxCode;setPending({code,index});reply=`待确认${code}\n\n标记完成任务${index+1}\n${task.title}\n\n回复「确认${code}」执行，或「取消${code}」。`;}
-    } else if(/切换.*(?:本地|模型1)/.test(text)) {wxModel='本地 Ollama · 示例配置';$('demo-model').textContent='◉ 本地 Ollama⌄';reply='已切换到本地模型\n\n本地 Ollama · 示例配置\n\n可回复：当前模型。';}
-    else if(/切换.*(?:云端|模型2)/.test(text)) {wxModel='云端模型 · 示例配置';$('demo-model').textContent='◉ 云端模型⌄';reply='已切换到云端模型 · 示例配置。';}
-    else if(/(?:当前|什么|哪个).*模型|模型列表/.test(text))reply=`当前模型：${wxModel}\n\n1、本地 Ollama\n2、云端模型\n\n可说：切换到本地模型。`;
-    else if(/待办|几个任务|查看任务/.test(text))reply=listText();
-    else reply='这是浏览器本地演示。可试试：\n\n查看待办\n任务1标记完成\n当前模型\n切换到本地模型\n\n真实记事喵使用你配置的模型理解自由输入。';
-    appendMessage(reply);wxBusy=false;wxUpdate();
-    if(wxPending)signal('等待短编号确认 · 待办暂未修改');
-    else if(confirmation?.[1]==='取消')signal('已取消 · 示例待办未改变');
-    else if(!confirmation)signal('微信已收到回复 · 两端共用这份待办');
-  }
-  wxInput.addEventListener('input',wxUpdate);
-  $('wx-form').addEventListener('submit',event=>{event.preventDefault();wechat(wxInput.value);});
-  $('wx-list').addEventListener('click',()=>wechat('现在有几个待办？'));
-  $('wx-complete').addEventListener('click',()=>{const index=tasks.findIndex(task=>!task.done);wechat(index<0?'查看待办':`任务${index+1}标记完成`);});
-  $('wx-model').addEventListener('click',()=>wechat('切换到本地模型'));
-  $('wx-confirm').addEventListener('click',()=>{if(wxPending)wechat('确认'+wxPending.code);});
-  async function scene(name) {
-    if(wxBusy || busy)return;
-    if(wxPending){appendMessage('已切换演示，上一条示例确认已取消。');setPending(null);}
-    document.querySelectorAll('[data-scene]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.scene===name)));
-    if(name==='wechat-add')await wechat('明晚八点提醒我读书');
-    else if(name==='wechat-reschedule') {const index=tasks.findIndex(task=>!task.done);await wechat(`任务${(index<0?0:index)+1}改到周五下午`);}
-    else {
-      const index=tasks.findIndex(task=>!task.done);
-      if(index<0){signal('示例都完成啦 · 试试从微信新增一件事');return;}
-      setPending(null);tasks[index].done=true;render(index);signal('在 Mac 完成一项 · 再到微信查看');
-      $('demo-feedback').textContent='已在 Mac 演示面板完成「'+tasks[index].title+'」';await motionDelay(500);await wechat('现在有几个待办？');
+    if(move||done){
+      const n=Number((move||done)[1]),task=tasks.find(t=>t.n===n);
+      if(!task)return `没有找到任务${n}，先发“这周还有什么”核对编号。`;
+      if(done&&task.done)return `任务${n}已经完成了。`;
+      code+=1;
+      if(move){const when=move[2].replace(/[。！!]$/,'').trim()||'下周一';pending={code,kind:'move',task,when:when.includes('下周一')?'下周一 09:30':when};return `待确认 ${code}\n\n${task.title}\n改到 ${pending.when}\n\n回复「确认${code}」执行，或「取消${code}」。`;}
+      pending={code,kind:'done',task};return `待确认 ${code}\n\n标记完成：${task.title}\n\n回复「确认${code}」执行，或「取消${code}」。`;
     }
+    if(/模型/.test(text)){
+      if(/切换|换成|改用/.test(text)){model=/云/.test(text)?'云端模型':'本地 Ollama';return `已切换到 ${model}。`;}
+      return `当前模型：${model}\n\n可说：切换到云端模型。`;
+    }
+    if(/待办|还有什么|这周|今天|任务/.test(text))return list();
+    return '这是网页里的本地演示，能听懂这几句：\n\n这周还有什么要做的？\n任务3改到下周一\n任务1标记完成\n当前用的什么模型？\n\n真实的记事喵用你配置的模型理解任意说法。';
   }
-  document.querySelectorAll('[data-scene]').forEach(button=>button.addEventListener('click',()=>scene(button.dataset.scene)));
-  render();scene('wechat-add');
+  let busy=false;
+  async function send(text){
+    text=text.trim();if(!text||busy)return;busy=true;add(text,true);input.value='';
+    await wait(420);add(reply(text));busy=false;
+    // Offer the confirmation reply as the next suggestion so the flow is one click.
+    const confirmButton=document.getElementById('confirm-suggest');
+    if(pending){
+      const b=confirmButton||Object.assign(document.createElement('button'),{type:'button',id:'confirm-suggest'});
+      b.textContent=`确认${pending.code}`;b.dataset.say=`确认${pending.code}`;document.getElementById('suggest').prepend(b);
+    } else confirmButton?.remove();
+  }
+  form.addEventListener('submit',e=>{e.preventDefault();send(input.value);});
+  document.getElementById('suggest').addEventListener('click',e=>{const b=e.target.closest('button');if(b)send(b.dataset.say);});
+  // Open with one real exchange so the panel shows what it does before anyone types.
+  add('这周还有什么要做的？',true);add(list());
 })();

@@ -39,7 +39,7 @@ struct HousekeeperView:View {
                         if service.isConnected {taskSection} else {onboarding}
                     }
                 }.padding(.horizontal,22).padding(.bottom,10)
-            }.scrollIndicators(.hidden)
+            }.scrollIndicators(.never)
             if service.selectedTab == "tasks",service.isConnected,service.visibleTasks.count>TaskBoard.collapsedLimit {allTasksButton.padding(.horizontal,22).padding(.bottom,10)}
         }.padding(.bottom,8)}.frame(minWidth:500,minHeight:440)
             .overlay(alignment:.bottom){if let notice=service.undoNotice {undoToast(notice).padding(.bottom,18)}}
@@ -639,7 +639,7 @@ struct SettingsView:View {
                     }
                     if !service.settingsNotice.isEmpty {Text(service.settingsNotice).font(.system(size:12)).foregroundStyle(palette.warning).textSelection(.enabled)}
                 }.padding(.horizontal,22).padding(.bottom,22)
-            }.scrollIndicators(.hidden)
+            }.scrollIndicators(.never)
         }}.frame(width:510,height:610).themeScope(appearance.selected)
         // Closing by Esc or the window button keeps edits too; toggles already apply instantly.
         .onDisappear{persist()}

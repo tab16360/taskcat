@@ -1,49 +1,200 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>记事喵 TaskCat — 一句话，安排好每件事。</title>
-  <meta name="description" content="记事喵 TaskCat，你的 AI 待办管家。在 Mac 菜单栏一句话新增、整理、改期和完成任务，也可通过微信随手管理。免费预览，自选云端或本地模型。">
-  <meta name="theme-color" content="#f8f7f3"><link rel="icon" href="assets/taskcat.png">
-  <link rel="stylesheet" href="style.css"><script src="site.js" defer></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>记事喵 TaskCat：一句话，安排好每件事</title>
+  <meta name="description" content="住在 Mac 菜单栏的 AI 待办管家。⌥⌘T 一句话记下，每天打开先看今日提醒，微信里也能查和改。开源，Apache-2.0。">
+  <meta property="og:title" content="记事喵 TaskCat 1.0：一句话，安排好每件事">
+  <meta property="og:description" content="Mac 菜单栏 AI 待办管家，微信里也能交代。开源，自选云端或本地模型。">
+  <meta property="og:image" content="https://tab16360.github.io/taskcat/assets/screens/panel-light.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:site" content="@ai_funs">
+  <meta name="theme-color" content="#f5f6f8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d1015" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="assets/taskcat.png">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/@phosphor-icons/web@2.1.1" defer></script>
+  <script src="site.js" defer></script>
 </head>
 <body>
 <a class="skip" href="#main">跳到正文</a>
-<header class="wrap"><a class="brand" href="#" aria-label="记事喵首页"><img src="assets/taskcat.png" width="42" height="42" alt=""><strong>记事喵</strong><span>TaskCat</span></a><nav aria-label="主导航"><a href="#everyday">怎么用</a><a href="#connections">连接</a><a href="#wechat">微信演示</a><a href="#start">开始使用</a><a class="github-link" href="https://github.com/tab16360/taskcat">GitHub ↗</a></nav></header>
-<main id="main">
-<section class="hero wrap">
-  <div class="hero-copy"><p class="eyebrow"><span class="dot"></span> 你的 AI 待办管家</p><h1>一句话，<br>安排好<span class="ink">每件事。</span></h1><p class="lead">在 Mac 菜单栏安排，也能在微信里交代。<br>一句话新增、改期、完成，同一份待办，<br class="desktop">在哪儿顺手，就在哪儿处理。</p><div class="actions"><a class="button" href="https://github.com/tab16360/taskcat/releases/download/v0.2.8-preview.1/TaskCat-arm64.zip">下载 Mac 预览版 <span>↓</span></a><a class="text-link" href="#wechat">试试微信对话 ↗</a></div><p class="release-note"><b>0.2.8</b> Liquid Glass 新界面 · 待办按时间分段 · 新版本弹窗提醒</p><p class="fine">免费预览 · 原生 macOS · 云端 / 本地模型自由选</p><p class="source-status">源码与开源协议筹备中</p><div class="handnote"><span aria-hidden="true">⤴</span> 少切几个窗口，少惦记几件事。</div></div>
-  <figure class="demo-figure linked-demo" id="linked-demo"><div class="connected-stage" id="wechat"><div class="signal-route" aria-hidden="true"><svg viewBox="0 0 800 580"><defs><linearGradient id="signal-color"><stop stop-color="#7061e8"/><stop offset="1" stop-color="#65ae88"/></linearGradient></defs><path d="M470 178C570 25 737 68 678 198"/><circle class="signal-orb" r="4"><animateMotion dur="1.6s" repeatCount="indefinite" path="M470 178C570 25 737 68 678 198"/></circle></svg></div>
-    <div class="desktop-strip" aria-hidden="true"><span>☰ &nbsp; 记事喵</span><span>⌁ &nbsp; ◉ &nbsp; 10:24</span></div>
-    <div class="app" id="demo-app">
-      <div class="app-head"><div><img src="assets/taskcat.png" width="32" height="32" alt=""><strong>记事喵</strong><span class="app-tag">TaskCat</span><span class="app-status" title="示例状态"><span><i></i>提醒事项</span><span><i></i>微信</span></span></div><button id="theme-toggle" class="icon-button" aria-label="切换演示主题" title="切换演示主题">◐</button></div>
-      <div class="composer" id="composer"><div class="input-row"><span class="wave-mark" aria-hidden="true">⌁</span><label class="sr-only" for="demo-input">体验一句话安排</label><input id="demo-input" placeholder="告诉我需要做什么…" autocomplete="off" maxlength="120"><button class="send" id="demo-send" aria-label="运行本地示例" disabled>↑</button></div><div class="compose-foot"><span id="demo-model">◉ &nbsp; 自选 AI 模型⌄</span><span>⌘ ↵</span></div><div class="thinking" id="thinking" hidden role="status"><div class="ribbons" aria-hidden="true"><i></i><i></i><i></i><i></i></div><span>正在整理这件事…</span></div></div>
-      <div class="stage-pending" id="stage-pending" hidden><span id="pending-label"></span><small>来自微信 · 等待确认</small></div><div class="app-nav"><div class="lens-track"><span class="selected">待办 <b id="demo-count">3</b></span><span>进行中</span><span>等待</span><span>已完成</span></div><button id="collapse" class="icon-button" aria-expanded="true" aria-controls="composer" title="收起或展开对话区">⌃</button></div>
-      <div class="task-list" id="demo-tasks"></div>
-      <p class="demo-feedback" id="demo-feedback" aria-live="polite">点微信里的“确认1”，看 Mac 待办跟着更新。</p>
+
+<header class="nav">
+  <div class="wrap nav-row">
+    <a class="brand" href="#" aria-label="记事喵首页"><img src="assets/taskcat.png" width="30" height="30" alt=""><strong>记事喵</strong><span>TaskCat</span></a>
+    <nav aria-label="主导航" class="nav-links">
+      <a href="#features">功能</a>
+      <a href="#wechat">微信</a>
+      <a href="#privacy">隐私</a>
+      <a href="#source">开源</a>
+    </nav>
+    <div class="nav-actions">
+      <a class="icon-link" href="https://x.com/ai_funs" aria-label="在 X 上关注 @ai_funs"><i class="ph ph-x-logo"></i></a>
+      <a class="icon-link" href="https://github.com/tab16360/taskcat" aria-label="GitHub 仓库"><i class="ph ph-github-logo"></i></a>
+      <a class="button small" href="https://github.com/tab16360/taskcat/releases/latest/download/TaskCat-arm64.zip">下载 macOS 版</a>
     </div>
-    <div class="wechat-window hero-chat"><div class="wechat-title"><span aria-hidden="true">‹</span><div><strong>记事喵</strong><small>微信对话示例</small></div><span aria-hidden="true">···</span></div><div class="wx-shortcuts"><button id="wx-list">查待办</button><button id="wx-complete">完成任务</button><button id="wx-model">切模型</button></div><div id="wx-messages" class="wechat-messages" role="log" aria-label="微信演示消息" aria-live="polite" aria-relevant="additions"></div><div class="wechat-compose"><button id="wx-confirm" class="wx-confirm" hidden>确认操作</button><form id="wx-form"><label for="wx-input" class="sr-only">给微信演示发送指令</label><input id="wx-input" placeholder="试试：当前模型" maxlength="120" autocomplete="off"><button id="wx-send" type="submit" disabled>发送</button></form><span>本地交互演示 · 消息不会发送到微信</span></div></div><div class="bridge-status"><i></i><span id="bridge-label">两个顺手入口，同一份待办</span></div></div><div class="demo-prompts scene-controls" aria-label="双端联动演示"><button data-scene="wechat-add"><b>01</b> 微信记一件事 <span>↗</span></button><button data-scene="wechat-reschedule"><b>02</b> 微信改个时间 <span>↗</span></button><button data-scene="mac-complete"><b>03</b> Mac完成，微信查看 <span>↗</span></button></div>
-    <figcaption>双端联动的本地示例 · 不连接 AI、微信或真实任务。</figcaption>
-  </figure>
-</section>
-<div class="principles wrap"><span>一句话安排 <b>↗</b></span><span>菜单栏随手打开 <b>↗</b></span><span>任务跟着设备走 <b>↗</b></span><a href="#wechat">微信也能管 <b>↗</b></a></div>
-<section class="section wrap" id="everyday"><div class="section-heading"><p class="eyebrow">01 / 事情说清楚，剩下交给它</p><h2>待办管理，<br>可以像聊天一样自然。</h2><p>从脑子里冒出的一个念头，到真正处理完一件事。</p></div><div class="scenarios">
-  <article><span class="scenario-no">01</span><h3>想到就记，不打断手头的事。</h3><p class="utterance">“明天下午三点提醒我交方案。”</p><p>点开菜单栏，说出任务和时间。记事喵理解你的安排，整理成一条待办；日期不明确时，先让你核对。</p><span class="note">新增任务 / 日期识别 / 确认后处理</span></article>
-  <article><span class="scenario-no">02</span><h3>计划变了，接着说就好。</h3><p class="utterance">“方案改到周五，进度先记 50%。”</p><p>改标题、调时间、记进度、移动分组。也可以直接点击任务手动编辑，模型暂时不可用时继续安排。</p><span class="note">改期 / 进度 / 分组管理</span></article>
-  <article><span class="scenario-no">03</span><h3>做完一件，就少惦记一件。</h3><p class="utterance">“任务5标记完成。”</p><p>编号明确，操作清楚。删除会同步移除系统中的对应提醒；误删可以在记事喵回收站按原编号恢复。</p><span class="note">完成 / 可恢复删除 / 稳定编号</span></article>
-</div></section>
-<section class="section companions" id="connections"><div class="wrap connection-grid"><div class="section-heading"><p class="eyebrow">02 / 在顺手的地方，处理同一份待办</p><h2>Mac 上交代，<br>出门也不忘。</h2><p>记事喵是独立的 Mac 应用。<br>借助系统提醒事项，复用你已有的同步和提醒。</p></div><div class="connection-list"><article><span class="connection-icon">⌘</span><div><h3>Mac 菜单栏：主要入口</h3><p>任务列表、AI 对话、手动编辑集中在一个面板。待办按逾期、今天、明天自动分段，提醒事项和微信的连接状态一眼可见。</p></div></article><article><span class="connection-icon">✓</span><div><h3>iPhone 提醒事项：随身查看与到期提醒</h3><p>选择 iCloud 提醒事项账户，基础任务同步到手机。同步完成后，iPhone 的系统提醒不需要 Mac 一直开着。</p><small>目前没有独立的记事喵 iOS App。</small></div></article><article><span class="connection-icon">↗</span><div><h3>微信：再多一个便捷入口</h3><p>查待办、改日期、完成任务，也能查看和切换模型。作为可选桥接使用，需要 Mac 和微信执行器运行。</p><small>核心包不包含第三方微信 SDK；接入方式与依赖限制见仓库。</small></div></article></div></div></section>
+  </div>
+</header>
 
+<main id="main">
+  <section class="hero wrap">
+    <div class="hero-copy reveal">
+      <p class="eyebrow">1.0 正式版 · 开源免费</p>
+      <h1>一句话，<br>安排好每件事。</h1>
+      <p class="lead">住在 Mac 菜单栏的 AI 待办管家。想到就记，微信里也能交代。</p>
+      <div class="actions">
+        <a class="button" href="https://github.com/tab16360/taskcat/releases/latest/download/TaskCat-arm64.zip"><i class="ph ph-download-simple"></i>下载 macOS 版</a>
+        <a class="button ghost" href="https://github.com/tab16360/taskcat"><i class="ph ph-github-logo"></i>查看源码</a>
+      </div>
+    </div>
+    <div class="hero-visual reveal">
+      <div class="glow" aria-hidden="true"></div>
+      <picture>
+        <source srcset="assets/screens/panel-dark.png" media="(prefers-color-scheme: dark)">
+        <img src="assets/screens/panel-light.png" width="540" height="820" alt="记事喵面板：输入框下是 AI 写的今日提醒，任务按已逾期、明天、7 天内分段">
+      </picture>
+      <div class="keycap" aria-hidden="true"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>T</kbd><span>随时唤出</span></div>
+    </div>
+  </section>
 
-<section class="section wrap choice"><div class="model-sheet"><div class="mini-caption">选择一个顺手的大脑</div><div class="model-row"><span>☁</span><div><strong>云端模型</strong><small>OpenAI 兼容接口 · 自备 Key</small></div><span>↗</span></div><div class="model-row"><span>⌘</span><div><strong>本地模型</strong><small>Ollama / 兼容服务 · 自行部署</small></div><span>↗</span></div><p>保存多套配置，在对话区下拉切换。<br>微信也可以说：“切换到本地大模型”。</p></div><div class="section-heading"><p class="eyebrow">03 / 小管家，大脑由你选</p><h2>云端够方便，<br>本地也自在。</h2><p>记事喵不捆绑模型服务，也不代收模型费用。<br>你决定用哪个服务、哪套模型。</p><p class="privacy-note">使用云模型时，输入、近期操作和相关任务标题、状态与分组会发给你选择的服务。Key 只保存在这台 Mac 的应用配置目录，不进入备份或同步；任务备注不放进模型上下文。</p></div></section>
-<section class="section wrap" id="start"><div class="start-panel"><div><p class="eyebrow">早期预览版 / macOS</p><h2>给那些零散的小事，<br>找一个好记的地方。</h2><p>从一条待办开始。记事喵，帮你记着。</p></div><div class="start-actions"><a class="button" href="https://github.com/tab16360/taskcat/releases/download/v0.2.8-preview.1/TaskCat-arm64.zip">下载 Mac 预览版 <span>↓</span></a><a class="text-link" href="https://github.com/tab16360/taskcat/releases/tag/v0.2.8-preview.1">查看版本说明 ↗</a><small>macOS 14+ · Apple Silicon 已实测<br>0.2.7 起发现新版本会弹窗提醒，一键更新<br>当前为临时签名、未经过 Apple 公证</small></div></div><ol class="steps"><li><span>1</span><div><h3>下载并打开</h3><p>解压，将“记事喵.app”放进应用程序。若系统拦截，核对来源后按“隐私与安全性”的提示允许打开。</p></div></li><li><span>2</span><div><h3>连接你的提醒事项</h3><p>首次连接时允许访问，选择账户。只操作记事喵管理的专用列表；iCloud 账户可同步到 iPhone。</p></div></li><li><span>3</span><div><h3>选一个模型，安排第一件事</h3><p>填写服务地址、模型 ID 和自己的 Key。也可先手动添加，之后再配置 AI。</p></div></li></ol></section>
-<section class="section wrap faq"><div class="section-heading"><p class="eyebrow">先说清楚 / 再放心使用</p><h2>几件你可能想问的事。</h2></div><div class="questions">
-<details><summary>记事喵和系统提醒事项是什么关系？<span>＋</span></summary><p>记事喵有自己的菜单栏界面、AI 对话、分组、状态、进度、回收站和备份。系统提醒事项承担基础任务存储、iCloud 同步和系统通知。它是底层能力，记事喵负责把日常待办管理变得顺手。</p></details>
-<details><summary>没有常开的 Mac，可以用吗？<span>＋</span></summary><p>可以在使用 Mac 时管理任务。已经同步到 iPhone 的任务仍可在系统提醒事项查看、编辑和接收通知。Mac 关闭后，记事喵的 AI 服务、微信机器人和额外 Bark 推送不会继续运行。</p></details>
-<details><summary>免费吗？任务会发到哪里？<span>＋</span></summary><p>记事喵目前提供免费预览，应用源码与许可证尚未公布，不提供内置模型额度。云模型按你选择的服务计费，本地模型需自己运行。任务交给所选系统提醒事项账户管理；扩展状态、进度、回收站和操作记录保存在 Mac 本机，可选用自己的 iCloud Drive 在两台 Mac 间同步（预览），也支持备份导出。使用云模型时会发送相关上下文。</p></details>
-<details><summary>怎么更新？为什么更新后可能再次请求授权？<span>＋</span></summary><p>0.2.7 起，记事喵每天检查一次 GitHub 上的新版本，发现后弹窗提醒；也可右键菜单栏图标选“检查更新…”。点“安装并重启”后会下载并校验安装包，重启时完成替换并保留旧版本备份。0.2.6 及更早版本需要手动下载这一次。当前预览版使用临时签名，替换构建后 macOS 可能重新确认提醒事项访问；同一构建重启已实测不重复申请。</p></details>
-<details><summary>有哪些还没完成？<span>＋</span></summary><p>没有独立 iOS App；两台 Mac 的扩展同步仍是预览实现，遇到真实冲突会暂停修改。干净机器、Intel、长期睡眠与断网场景还需更多验收。含重复规则、位置等复杂提醒暂不承诺完整删除恢复。自然语言理解可能出错，修改前请核对确认内容。</p></details>
-</div></section>
+  <section class="pains wrap" aria-labelledby="pains-title">
+    <h2 id="pains-title" class="reveal">待办工具不缺。<br>缺的是记下来的那一秒。</h2>
+    <div class="pain-list">
+      <div class="pain reveal">
+        <p class="before">想到一件事，打开 App、找列表、选日期、填分组。念头已经没了。</p>
+        <p class="after"><kbd>⌥</kbd><kbd>⌘</kbd><kbd>T</kbd> 在任何窗口里弹出输入框，一句话说完就回到手头的事。</p>
+      </div>
+      <div class="pain reveal">
+        <p class="before">列表越积越长，打开只看到一堵墙，分不清哪件今天必须做。</p>
+        <p class="after">每天第一次打开，AI 先用两三句话告诉你：哪件逾期了，今天先做哪件。</p>
+      </div>
+      <div class="pain reveal">
+        <p class="before">人在外面，手边只有微信。想改个时间，只能等回到电脑前。</p>
+        <p class="after">在微信里问“这周还有什么”，回“任务3改到下周一”，Mac 上同步改好。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="features wrap" id="features" aria-labelledby="features-title">
+    <h2 id="features-title" class="reveal">打开就知道，今天先做哪件。</h2>
+    <div class="bento">
+      <article class="tile tile-brief reveal">
+        <div class="tile-text">
+          <h3>每天一段今日提醒</h3>
+          <p>AI 读一遍逾期、今天到期和进行中的事，告诉你先后顺序。没配模型时，本机照样整理。</p>
+        </div>
+        <img src="assets/screens/conversation.png" width="540" height="820" loading="lazy" alt="对话记录里的今日提醒和微信查询结果">
+      </article>
+      <article class="tile tile-timeline reveal">
+        <div class="tile-text">
+          <h3>按“什么时候要做”排好</h3>
+          <p>已逾期、今天、明天、7 天内各成一段。逾期标红，进行中显示进度环。</p>
+        </div>
+        <img src="assets/screens/panel-dark.png" width="540" height="820" loading="lazy" alt="深色主题下按时间分段的任务列表">
+      </article>
+      <article class="tile tile-keys reveal">
+        <h3>推迟、改状态、撤销，一下就好</h3>
+        <ul class="chips" aria-label="任务行快捷操作">
+          <li>推迟到明天</li><li>推迟到下周一</li><li>设为进行中</li><li>移到分组</li><li>完成后撤销</li>
+        </ul>
+        <p>菜单栏图标旁的数字，就是今天逾期加到期的件数。</p>
+      </article>
+      <article class="tile tile-model reveal">
+        <h3>模型你自己选</h3>
+        <p>任何 OpenAI 兼容接口，或者本地 Ollama，数据不出本机。设置里一键测试连接。</p>
+        <div class="model-row"><span><i class="ph ph-cloud"></i>云端</span><span><i class="ph ph-desktop"></i>本地 Ollama</span></div>
+      </article>
+      <article class="tile tile-settings reveal">
+        <img src="assets/screens/settings.png" width="510" height="610" loading="lazy" alt="分栏设置页：外观、每日提醒、全局快捷键、菜单栏数量">
+        <div class="tile-text">
+          <h3>设置不再是一面墙</h3>
+          <p>通用、AI 模型、同步与备份、微信、更新，各归各位。新版本到了会弹窗提醒，点一下就装好。</p>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section class="wechat" id="wechat" aria-labelledby="wechat-title">
+    <div class="wrap wechat-grid">
+      <div class="wechat-copy reveal">
+        <h2 id="wechat-title">微信里也能交代。</h2>
+        <p>记事喵可以接入你的微信。查待办、改时间、标完成，和菜单栏共用同一份任务、同一套编号。会改动任务的指令先发确认，回复短编号才执行。</p>
+        <p class="note">右边是浏览器里的本地演示，不连接微信或模型。真实使用需要 Mac 上的记事喵在运行。</p>
+      </div>
+      <div class="phone reveal" aria-label="微信对话演示">
+        <div class="phone-head"><img src="assets/taskcat.png" width="28" height="28" alt=""><div><strong>记事喵</strong><small>微信对话演示</small></div></div>
+        <div class="thread" id="thread" role="log" aria-live="polite"></div>
+        <div class="suggest" id="suggest">
+          <button type="button" data-say="这周还有什么要做的？">这周还有什么</button>
+          <button type="button" data-say="任务3改到下周一">任务3改到下周一</button>
+          <button type="button" data-say="任务1标记完成">任务1标记完成</button>
+          <button type="button" data-say="当前用的什么模型？">当前模型</button>
+        </div>
+        <form class="compose" id="compose">
+          <label class="sr-only" for="say">给记事喵发消息</label>
+          <input id="say" autocomplete="off" maxlength="80" placeholder="试试：任务2标记完成">
+          <button type="submit" aria-label="发送"><i class="ph ph-paper-plane-tilt"></i></button>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <section class="privacy wrap" id="privacy" aria-labelledby="privacy-title">
+    <div class="privacy-lead reveal">
+      <h2 id="privacy-title">任务存在<br>你自己的账户里。</h2>
+      <p>记事喵不建服务器，也不收集数据。它借用系统“提醒事项”存任务，用你选的模型理解句子。</p>
+    </div>
+    <ul class="facts">
+      <li class="reveal"><i class="ph ph-device-mobile"></i><div><h3>iPhone 上照样提醒</h3><p>选 iCloud 账户后，手机提醒事项里能看能改；到期由系统通知，Mac 关机也不耽误。</p></div></li>
+      <li class="reveal"><i class="ph ph-laptop"></i><div><h3>两台 Mac 同一份进度</h3><p>状态、进度、编号和回收站，经你自己的 iCloud Drive 同步。</p></div></li>
+      <li class="reveal"><i class="ph ph-key"></i><div><h3>Key 只在这台 Mac</h3><p>不进备份，不跨机同步。发给模型的只有相关任务的标题、状态和分组，不含备注。</p></div></li>
+      <li class="reveal"><i class="ph ph-shield-check"></i><div><h3>更新有校验</h3><p>新版本先核对 SHA-256、代码签名和应用标识，替换失败自动还原。</p></div></li>
+    </ul>
+  </section>
+
+  <section class="source" id="source" aria-labelledby="source-title">
+    <div class="wrap source-inner reveal">
+      <h2 id="source-title">代码全部公开。</h2>
+      <p>Swift 与 SwiftUI 原生实现，Apache-2.0 许可。不放心就读代码，想改就自己编译。</p>
+      <pre class="code" aria-label="从源码构建"><code><span class="c"># 克隆并构建</span>
+git clone https://github.com/tab16360/taskcat.git
+cd taskcat && bash scripts/build-app.sh</code></pre>
+      <a class="button ghost" href="https://github.com/tab16360/taskcat"><i class="ph ph-github-logo"></i>查看源码</a>
+    </div>
+  </section>
+
+  <section class="start wrap" id="start" aria-labelledby="start-title">
+    <div class="start-head reveal">
+      <h2 id="start-title">三分钟开始。</h2>
+      <a class="button" href="https://github.com/tab16360/taskcat/releases/latest/download/TaskCat-arm64.zip"><i class="ph ph-download-simple"></i>下载 macOS 版</a>
+    </div>
+    <ol class="steps">
+      <li class="reveal"><h3>下载并打开</h3><p>解压后拖进“应用程序”。被拦截时，在“隐私与安全性”底部点“仍要打开”。</p></li>
+      <li class="reveal"><h3>连接提醒事项</h3><p>点“授权并连接”，选择账户。只操作记事喵自己的专用列表。</p></li>
+      <li class="reveal"><h3>选一个模型</h3><p>填服务地址、模型 ID 和 Key，点“测试连接”。也可以先手动添加。</p></li>
+    </ol>
+    <div class="faq">
+      <details class="reveal"><summary>免费吗？要付什么钱？</summary><p>记事喵免费、开源。云端模型按你选的服务计费；本地模型不花钱，需要自己运行 Ollama 等服务。</p></details>
+      <details class="reveal"><summary>为什么首次打开会被系统拦下？</summary><p>应用用固定的自签名证书签名，没有经过 Apple 公证。核对来源后在“隐私与安全性”里点“仍要打开”即可，不需要关闭任何安全功能。之后的更新会保留提醒事项授权。</p></details>
+      <details class="reveal"><summary>Mac 不常开，还能用吗？</summary><p>可以。任务同步到 iPhone 的提醒事项后，手机上照样能看、能改、能收到通知。只有 AI 理解、今日提醒和微信入口需要 Mac 上的记事喵在运行。</p></details>
+      <details class="reveal"><summary>支持哪些 Mac？有 iPhone App 吗？</summary><p>macOS 14 以上，Apple Silicon 已实测，Intel 尚未验收。没有独立的 iPhone App，手机端用系统提醒事项。</p></details>
+      <details class="reveal"><summary>AI 理解错了怎么办？</summary><p>会改动任务的指令默认先给你确认，核对后再执行。点完成后几秒内也能撤销，删除的任务进回收站，可以恢复。</p></details>
+    </div>
+  </section>
 </main>
-<footer class="wrap"><a class="brand" href="#"><img src="assets/taskcat.png" width="30" height="30" alt=""><strong>记事喵</strong><span>TaskCat</span></a><p>小事交代清楚，给脑子留点空。</p><div><a href="https://github.com/tab16360/taskcat">GitHub ↗</a><a href="https://github.com/tab16360/taskcat/issues">反馈问题 ↗</a><a href="https://tab16360.github.io/flowcat/">也看看流量喵 ↗</a></div></footer>
-</body></html>
+
+<footer class="footer">
+  <div class="wrap footer-row">
+    <a class="brand" href="#"><img src="assets/taskcat.png" width="26" height="26" alt=""><strong>记事喵</strong><span>TaskCat</span></a>
+    <nav aria-label="页脚链接">
+      <a href="https://github.com/tab16360/taskcat">GitHub</a>
+      <a href="https://x.com/ai_funs">X @ai_funs</a>
+      <a href="https://github.com/tab16360/taskcat/issues">反馈问题</a>
+      <a href="https://tab16360.github.io/flowcat/">流量喵</a>
+    </nav>
+    <p>Apache-2.0 开源。小事交代清楚，给脑子留点空。</p>
+  </div>
+</footer>
+</body>
+</html>

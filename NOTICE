@@ -1,0 +1,7 @@
+记事喵 TaskCat
+Copyright 2026 tab16360
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The optional WeChat bridge adapts the third-party wechat_clawbot_sdk, which is not
+included in this repository or in release packages and is not covered by this license.
