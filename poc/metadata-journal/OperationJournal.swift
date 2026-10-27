@@ -118,6 +118,11 @@ struct OperationJournal {
         let data = try op.canonicalData()
         _ = try MetadataOperation.decode(data)
         let target = directory.appendingPathComponent(op.operationId + ".json")
+        // Already published: answer without staging and fsyncing a throwaway copy.
+        if let existing = try? Data(contentsOf: target) {
+            guard try MetadataOperation.decode(existing) == op else { throw JournalError.operationIDCollision }
+            return false
+        }
         let temporary = directory.appendingPathComponent(".staging-" + UUID().uuidString)
         guard FileManager.default.createFile(atPath: temporary.path, contents: data,
             attributes: [.posixPermissions: 0o600]) else { throw JournalError.invalid("staging failed") }

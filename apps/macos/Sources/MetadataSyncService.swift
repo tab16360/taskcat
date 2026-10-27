@@ -47,7 +47,8 @@ extension TaskService {
             let entries=try TaskTrashStore(directory:AppPaths.trash).all()
             let actor=actorID
             let merge=try await Task.detached {try store.exchange(actor:actor,operations:local,numbers:exportedNumbers,trash:entries)}.value
-            for op in merge.operations.values {_=try journal.append(op)}
+            // Skip exact duplicates only; a same-ID mismatch must still reach append and fail loudly.
+            for op in merge.operations.values where local[op.operationId] != op {_=try journal.append(op)}
             let projection=try journal.project()
             let states=Dictionary(uniqueKeysWithValues:projection.entities.filter{$0.entityType=="task"}.map{($0.entityId,$0)})
             let trash=try TaskTrashStore(directory:AppPaths.trash)

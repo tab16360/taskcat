@@ -17,7 +17,11 @@ struct AppPaths {
     }
     static func write<T: Encodable>(_ item: T,to url:URL) throws {
         let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
-        try encoder.encode(item).write(to:url,options:.atomic)
+        let data = try encoder.encode(item)
+        // Periodic sync re-saves unchanged state; identical bytes were already fsynced by an
+        // earlier call, so rewriting them only burns SSD writes (gigabytes per day at 12 s).
+        if (try? Data(contentsOf:url)) == data { return }
+        try data.write(to:url,options:.atomic)
         try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:url.path)
         let file = try FileHandle(forWritingTo:url); try file.synchronize(); try file.close()
         let directory=Darwin.open(url.deletingLastPathComponent().path,O_RDONLY)
