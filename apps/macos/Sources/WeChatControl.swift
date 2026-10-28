@@ -2,58 +2,53 @@ import Foundation
 import AppKit
 
 extension TaskService {
-    func startWeChat() {
-        guard oldOwnerStopped else { errorMessage="请先确认其他设备上的微信执行器已停止。";return }
-        guard wechatProcess?.isRunning != true else { return }
-        do {
-            let runtime=AppPaths.root.appendingPathComponent("bridge-runtime")
-            let executable=runtime.appendingPathComponent("venv/bin/python")
-            let worker=runtime.appendingPathComponent("code/run_worker.py")
-            guard FileManager.default.isExecutableFile(atPath:executable.path),FileManager.default.fileExists(atPath:worker.path) else {
-                throw AppFailure.message("微信运行环境尚未安装，请运行工程的本机安装脚本。")
-            }
-            let process=Process();process.executableURL=executable
-            process.arguments=[worker.path,"--old-owner-stopped","--parent-pid",String(ProcessInfo.processInfo.processIdentifier)]
-            process.environment=WeChatEnvironment.worker(ProcessInfo.processInfo.environment)
-            if wechatState=="session_expired" {process.arguments!.append("--login-again")}
-            process.standardOutput=FileHandle.nullDevice
-            let errors=AppPaths.runtime.appendingPathComponent("wechat-worker-errors.log")
-            if !FileManager.default.fileExists(atPath:errors.path) {FileManager.default.createFile(atPath:errors.path,contents:nil,attributes:[.posixPermissions:0o600])}
-            let errorFile=try FileHandle(forWritingTo:errors);try errorFile.seekToEnd();process.standardError=errorFile
-            try process.run();wechatProcess=process;wechatState="starting"
-            UserDefaults.standard.set(true,forKey:"TaskSecretary.wechatAutoConnect")
-            UserDefaults.standard.set(true,forKey:"TaskSecretary.confirmedSingleOwner")
-            wechatTimer?.invalidate()
-            wechatTimer=Timer.scheduledTimer(withTimeInterval:1.5,repeats:true){[weak self] _ in
-                Task { @MainActor in self?.updateWeChatStatus() }
-            }
-        } catch {errorMessage="微信连接启动失败："+error.localizedDescription}
+    /// Built-in connection: scan once in settings; later launches reconnect with the saved session.
+    func startWeChat(forceLogin:Bool=false) {
+        guard oldOwnerStopped else { errorMessage="请先确认其他设备上的微信连接已停止。";return }
+        guard wechatBridge?.isRunning != true else{return}
+        UserDefaults.standard.set(true,forKey:"TaskSecretary.wechatAutoConnect")
+        UserDefaults.standard.set(true,forKey:"TaskSecretary.confirmedSingleOwner")
+        let relogin=forceLogin || ["session_expired","login_expired","already_bound"].contains(wechatState)
+        wechatState="starting";wechatQRCode=nil
+        let bridge=makeWeChatBridge();wechatBridge=bridge
+        bridge.start(forceLogin:relogin)
     }
     func stopWeChat(preserveAutoConnect:Bool=false) {
         if !preserveAutoConnect {UserDefaults.standard.set(false,forKey:"TaskSecretary.wechatAutoConnect")}
-        wechatProcess?.terminate();wechatProcess=nil;wechatTimer?.invalidate();wechatTimer=nil
-        wechatState="stopped";wechatQRCode=nil
+        wechatBridge?.stop();wechatBridge=nil
+        wechatState="stopped";wechatQRCode=nil;wechatVerifyCode=""
     }
-    func updateWeChatStatus() {
-        let root=FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".tasksecretary/wechat")
-        if let data=try? Data(contentsOf:root.appendingPathComponent("status.json")),
-           let json=(try? JSONSerialization.jsonObject(with:data)) as? [String:Any],let state=json["state"] as? String {
-            if let pid=(json["worker_pid"] as? NSNumber)?.int32Value,pid==wechatProcess?.processIdentifier {
-                wechatState=state
-                if state=="waiting_for_scan" {wechatQRCode=NSImage(contentsOf:root.appendingPathComponent("login.png"))}
-                else {wechatQRCode=nil}
-            }
-        }
-        if wechatProcess?.isRunning != true {
-            if wechatProcess?.terminationStatus==3 {wechatState="worker_conflict"}
-            else if ["starting","connected","network_error","waiting_for_app"].contains(wechatState) {wechatState="blocked"}
-            wechatTimer?.invalidate();wechatTimer=nil
-        }
+    func submitWeChatVerifyCode() {
+        let code=wechatVerifyCode.trimmingCharacters(in:.whitespacesAndNewlines)
+        guard !code.isEmpty else{return}
+        wechatBridge?.submitVerifyCode(code);wechatVerifyCode=""
+    }
+    private func makeWeChatBridge()->WeChatBridge {
+        let home=FileManager.default.homeDirectoryForCurrentUser
+        let version=Bundle.main.object(forInfoDictionaryKey:"CFBundleShortVersionString") as? String ?? "1.0.0"
+        let options=WeChatBridge.Options(root:home.appendingPathComponent(".tasksecretary/wechat"),
+                                         lockFile:AppPaths.runtime.appendingPathComponent("wechat-worker.lock"),appVersion:version)
+        // Only the current bridge may change the visible state; a stopped one's last words are ignored.
+        weak var current:WeChatBridge?
+        let bridge=WeChatBridge(options:options,
+            handler:{[weak self] text,source,id in
+                guard let self else{return ServiceResult(ok:false,status:"busy",message:"记事喵正在退出",requestId:id)}
+                return await self.submit(text,source:source,id:id)
+            },
+            sink:{[weak self] state,link in
+                guard let self,let current,self.wechatBridge === current else{return}
+                self.wechatState=state
+                let showQR=["waiting_for_scan","scanned","need_verifycode"].contains(state)
+                self.wechatQRCode=showQR ? link.flatMap(WeChatBridge.qrImage) : nil
+            })
+        current=bridge
+        return bridge
     }
     var wechatLabel:String {
-        ["stopped":"未连接","starting":"正在连接…","waiting_for_scan":"请使用微信扫码并确认",
-         "connected":"已连接 · 共用任务服务","waiting_for_app":"正在等待任务服务","session_expired":"会话已失效，请重新扫码",
-         "network_error":"网络异常，正在重试","reply_uncertain":"回复结果不明，已暂停","blocked":"执行器已退出，请重试（保留现有会话）",
-         "worker_conflict":"本机已有微信执行器占用连接，请先停止旧进程","protocol_error":"微信接口返回异常，连接已暂停","owner_exited":"主应用已退出，连接已停止"] [wechatState] ?? wechatState
+        ["stopped":"未连接","starting":"正在连接…","waiting_for_scan":"请用微信扫码","scanned":"已扫码，请在手机上确认",
+         "need_verifycode":"请输入手机微信上显示的数字","connected":"已连接","waiting_for_app":"正在等待任务服务",
+         "session_expired":"登录已失效，请重新扫码","login_expired":"二维码已失效，请重新连接","already_bound":"这个微信已连接过其他设备，请先在微信中解除",
+         "network_error":"网络异常，正在重试","reply_uncertain":"有一条回复未确认送达，已暂停，请重新连接",
+         "worker_conflict":"本机已有另一个微信连接在运行","blocked":"连接中断，请重新连接"][wechatState] ?? wechatState
     }
 }

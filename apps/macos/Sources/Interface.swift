@@ -173,9 +173,9 @@ struct HousekeeperView:View {
             case "stopped":return nil
             case "connected":return ("微信",palette.success)
             case "starting","waiting_for_app":return ("微信连接中",palette.accent)
-            case "waiting_for_scan":return ("微信待扫码",palette.accent)
+            case "waiting_for_scan","scanned","need_verifycode":return ("微信待扫码",palette.accent)
             case "network_error":return ("微信重试中",palette.warning)
-            case "session_expired":return ("微信需扫码",palette.danger)
+            case "session_expired","login_expired":return ("微信需扫码",palette.danger)
             default:return ("微信已断开",palette.danger)
             }
         }()
@@ -760,16 +760,26 @@ struct SettingsView:View {
     }
     private var wechatTab:some View {
         VStack(alignment:.leading,spacing:13) {
-            HStack{sectionTitle("微信入口（可选）",symbol:"bubble.left.and.bubble.right");Spacer();Text(service.wechatLabel).font(.system(size:11)).foregroundStyle(palette.accent)}
-            note("在微信里给记事喵发消息即可查询和安排任务。需要这台 Mac 开着记事喵，并且同一微信只在一台 Mac 上连接。")
-            Toggle("其他设备上的微信连接已停止",isOn:$service.oldOwnerStopped).font(.system(size:12)).toggleStyle(.checkbox)
+            HStack{sectionTitle("微信随手记",symbol:"bubble.left.and.bubble.right");Spacer();Text(service.wechatLabel).font(.system(size:11)).foregroundStyle(service.wechatState == "connected" ? palette.success : palette.accent)}
+            note("连接后，在微信里给记事喵发一句话就能记下待办，也能查询、改时间、标完成；语音消息同样可以。带时间的指令会先让你核对。需要这台 Mac 上的记事喵保持运行。")
+            switchRow("其他设备上的微信连接已停止",$service.oldOwnerStopped)
+            note("同一个微信只能连接一台 Mac。")
             HStack {
-                Button(service.wechatState == "stopped" ? "连接微信" : "重新连接"){service.stopWeChat(preserveAutoConnect:true);service.startWeChat()}.buttonStyle(ConsoleButton(prominent:true)).disabled(!service.oldOwnerStopped || service.wechatState == "connected")
+                Button(service.wechatState == "stopped" ? "连接微信" : "重新连接"){
+                    let relogin=service.wechatState != "stopped" && service.wechatState != "connected"
+                    service.stopWeChat(preserveAutoConnect:true);service.startWeChat(forceLogin:relogin)
+                }.buttonStyle(ConsoleButton(prominent:true)).disabled(!service.oldOwnerStopped || service.wechatState == "connected")
                 Button("断开"){service.stopWeChat()}.buttonStyle(ConsoleButton()).disabled(service.wechatState == "stopped")
             }
             if let image=service.wechatQRCode {
                 Image(nsImage:image).interpolation(.none).resizable().scaledToFit().frame(width:180,height:180).padding(12).background(.white,in:RoundedRectangle(cornerRadius:12)).frame(maxWidth:.infinity)
-                Text("用微信扫码，确认连接此设备。").font(.system(size:12)).foregroundStyle(palette.muted).frame(maxWidth:.infinity)
+                Text(service.wechatState == "scanned" ? "已扫码，请在手机上确认。" : "用手机微信扫码，连接这台 Mac。").font(.system(size:12)).foregroundStyle(palette.muted).frame(maxWidth:.infinity)
+            }
+            if service.wechatState == "need_verifycode" {
+                HStack {
+                    TextField("手机微信上显示的数字",text:$service.wechatVerifyCode).textFieldStyle(.roundedBorder).onSubmit{service.submitWeChatVerifyCode()}
+                    Button("确认"){service.submitWeChatVerifyCode()}.buttonStyle(ConsoleButton(prominent:true))
+                }
             }
         }.padding(18).consoleCard()
     }

@@ -88,8 +88,9 @@ final class TaskService: ObservableObject {
     @Published var oldOwnerStopped=false
     @Published var wechatState="stopped"
     @Published var wechatQRCode:NSImage?=nil
-    var wechatProcess:Process?
-    var wechatTimer:Timer?
+    var wechatBridge:WeChatBridge?
+    /// The number WeChat shows on the phone when it asks to confirm a new connection.
+    @Published var wechatVerifyCode=""
     var metadataTimer:Timer?
     var metadataSyncProblem:String?
     @Published var metadataSyncEnabled=false
@@ -98,7 +99,6 @@ final class TaskService: ObservableObject {
     var journal:OperationJournal!
     var actorID=""
     private var refreshObserver:NSObjectProtocol?
-    private var ipc:LocalCommandServer?
     private var lastArchive=Date.distantPast
 
     init() {
@@ -119,13 +119,8 @@ final class TaskService: ObservableObject {
             let file=AppPaths.root.appendingPathComponent("actor.json")
             if let data=try? Data(contentsOf:file),let id=try? JSONDecoder().decode(String.self,from:data) { actorID=id }
             else { actorID=UUID().uuidString.lowercased();try AppPaths.write(actorID,to:file) }
-            ipc=try LocalCommandServer { [weak self] request,finish in
-                Task { @MainActor in
-                    guard let self=self else { return }
-                    let result=await self.submit(request.text,source:request.source,id:request.requestId)
-                    finish(result)
-                }
-            }
+            // WeChat now runs in-process; the local socket the Python worker used is gone.
+            for stale in ["command.sock","command-token.json"] {try? FileManager.default.removeItem(at:AppPaths.runtime.appendingPathComponent(stale))}
             refreshObserver=NotificationCenter.default.addObserver(forName:.EKEventStoreChanged,object:nil,queue:.main) { [weak self] _ in
                 Task { @MainActor in guard let self=self,self.isConnected,!self.busy else { return };try? await self.reload() }
             }
