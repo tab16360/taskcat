@@ -61,6 +61,17 @@ struct ConversationRules {
         record.source==source && record.phase=="awaiting_confirmation" &&
         (record.confirmationNumber.map(String.init)==code || code.count==8 && record.id.hasPrefix(code))
     }
+    /// Ask only when unsure: the model said so, the target task was guessed rather than named,
+    /// or the date came from the model instead of the message. Group changes always ask.
+    static func needsConfirmation(_ c:TaskCommand,input:String,tasks:[ManagedTask],numbers:TaskNumbers)->Bool {
+        if c.requiresConfirmation || ["rename_group","delete_group"].contains(c.intent) {return true}
+        if let id=c.taskId,let task=tasks.first(where:{$0.id==id}) {
+            let named=taskNumber(input).map{numbers.values[id]==$0} ?? false
+            if !named && !input.localizedCaseInsensitiveContains(task.title) {return true}
+        }
+        if let date=c.dateText,DateSuggestion.date(for:date)==nil || DateSuggestion.explicitDateText(in:input)==nil {return true}
+        return false
+    }
     static func taskNumber(_ text:String)->Int? {
         guard let range=text.range(of:#"(?:任务|待办)\s*#?\s*[0-9]+"#,options:.regularExpression) else{return nil}
         let digits=text[range].filter{$0.isNumber};return Int(digits)
@@ -112,7 +123,7 @@ struct ConversationRules {
         }
         let extracted=["create_task","update_task","complete_task","reopen_task","move_task"].contains(intent) ? DateSuggestion.explicitDateText(in:input) : nil
         return TaskCommand(operationId:c.operationId,intent:intent,taskId:c.taskId,patch:patch,
-            dateText:extracted ?? c.dateText,requiresConfirmation:c.requiresConfirmation || extracted != nil)
+            dateText:extracted ?? c.dateText,requiresConfirmation:c.requiresConfirmation)
     }
 }
 

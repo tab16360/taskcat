@@ -71,7 +71,7 @@
       </div>
       <div class="pain reveal">
         <p class="before">人在外面想起一件事，只能先发给文件传输助手，回到电脑前再抄一遍。多半就忘了抄。</p>
-        <p class="after">直接发微信给记事喵：“明天下午三点交方案”。回一句“确认1”，任务就进了 Mac 和 iPhone 的提醒事项。</p>
+        <p class="after">直接发微信给记事喵：“明天下午三点交方案”。几秒后，任务就进了 Mac 和 iPhone 的提醒事项。</p>
       </div>
     </div>
   </section>
@@ -112,8 +112,8 @@
     <div class="wrap wechat-grid">
       <div class="wechat-copy reveal">
         <h2 id="wechat-title">微信随手记。</h2>
-        <p>出门在外，想到什么就给记事喵发一句话。它理解时间和分组，先回你一条核对，回复“确认1”就记下：Mac 菜单栏和 iPhone 提醒事项同时出现，到点照常提醒。</p>
-        <p>带时间的指令都会先让你核对一眼，免得听错日期。查这周安排、改时间、标完成，也都在同一个对话里。</p>
+        <p>出门在外，想到什么就给记事喵发一句话。它理解时间和分组，直接记下：Mac 菜单栏和 iPhone 提醒事项同时出现，到点照常提醒。</p>
+        <p>只有拿不准的时候才会问你，比如没说清是哪件事，或者日期太含糊。查这周安排、改时间、标完成，也都在同一个对话里。</p>
         <p class="note">在设置里点“连接微信”，手机扫码即可，不需要另外安装。右边是浏览器里的本地演示，不连接微信或模型；真实使用需要 Mac 上的记事喵在运行。</p>
       </div>
       <div class="phone reveal" aria-label="微信对话演示">
@@ -175,7 +175,7 @@ cd taskcat && bash scripts/build-app.sh</code></pre>
       <details class="reveal"><summary>微信怎么连接？要装别的东西吗？</summary><p>不用。在设置的“微信”里点“连接微信”，用手机微信扫码确认就好。连接按腾讯官方开放的 iLink 协议实现，登录信息只存在你这台 Mac 上。同一个微信请只连接一台 Mac。</p></details>
       <details class="reveal"><summary>Mac 不常开，还能用吗？</summary><p>可以。任务同步到 iPhone 的提醒事项后，手机上照样能看、能改、能收到通知。只有 AI 理解、今日提醒和微信入口需要 Mac 上的记事喵在运行。</p></details>
       <details class="reveal"><summary>支持哪些 Mac？有 iPhone App 吗？</summary><p>macOS 14 以上，Apple Silicon 已实测，Intel 尚未验收。没有独立的 iPhone App，手机端用系统提醒事项。</p></details>
-      <details class="reveal"><summary>AI 理解错了怎么办？</summary><p>会改动任务的指令默认先给你确认，核对后再执行。点完成后几秒内也能撤销，删除的任务进回收站，可以恢复。</p></details>
+      <details class="reveal"><summary>AI 理解错了怎么办？</summary><p>拿不准的时候它会先问你；每条回复都写明记下的时间，不对就直接说“任务7改到周五”。点完成后几秒内也能撤销，删除的任务进回收站，可以恢复。</p></details>
     </div>
   </section>
 </main>

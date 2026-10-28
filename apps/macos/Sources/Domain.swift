@@ -163,16 +163,13 @@ struct TaskCommand: Codable, Equatable {
         }
         if case .number(let progress)=c.patch["progress"] {
             c.patch["progress"] = .number(max(10,min(100,Int((Double(progress)/10).rounded())*10)))
-            if progress >= 95 {c.patch["status"] = .text("done");c.requiresConfirmation=true}
+            if progress >= 95 {c.patch["status"] = .text("done")}
         }
         let restricted: [String: Set<String>] = ["rename_group":["groupId","newGroupId"],"delete_group":["groupId"],"create_group":["groupId"],"query_groups":[],"delete_task": [], "complete_task": ["status"], "reopen_task": ["status"], "move_task": ["groupId"], "query_tasks": ["groupId", "status"]]
         if let allowed=restricted[c.intent], !Set(c.patch.keys).isSubset(of:allowed) { throw AppFailure.message("模型命令包含与操作不符的修改，未执行。") }
         if c.intent=="complete_task", let status=c.text("status"),status != "done" { throw AppFailure.message("完成命令的状态不一致，未执行。") }
         if c.intent=="reopen_task", let status=c.text("status"),status != "todo" { throw AppFailure.message("重新打开命令的状态不一致，未执行。") }
         if c.intent == "move_task", c.text("groupId") == nil { throw AppFailure.message("请说明要移动到哪个分组。") }
-        if ["delete_task","complete_task","reopen_task"].contains(c.intent) || c.text("status") == "done" || c.text("status") == "cancelled" || c.dateText != nil || c.patch["title"] != nil && c.intent != "create_task" {
-            c.requiresConfirmation = true
-        }
         return c
     }
 }

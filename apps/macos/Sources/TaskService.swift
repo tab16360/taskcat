@@ -110,10 +110,11 @@ final class TaskService: ObservableObject {
             if let data=try? Data(contentsOf:AppPaths.preferences),let p=try? JSONDecoder().decode(ModelPreferences.self,from:data) { preferences=p }
             if let data=try? Data(contentsOf:AppPaths.root.appendingPathComponent("task-numbers.json")) {taskNumbers=try JSONDecoder().decode(TaskNumbers.self,from:data)}
             preferences.migrateProfiles()
-            // Local models always required confirmation before; keep that as the starting point.
-            if !UserDefaults.standard.bool(forKey:"TaskSecretary.confirmMigrated") {
-                if preferences.provider != "cloud" {preferences.confirmAll=true;try? AppPaths.write(preferences,to:AppPaths.preferences)}
-                UserDefaults.standard.set(true,forKey:"TaskSecretary.confirmMigrated")
+            // Earlier versions turned "confirm everything" on for local models; confirmation is now
+            // asked only when a request is uncertain, so reset that automatic default once.
+            if !UserDefaults.standard.bool(forKey:"TaskSecretary.confirmWhenUnsure") {
+                if preferences.confirmAll {preferences.confirmAll=false;try? AppPaths.write(preferences,to:AppPaths.preferences)}
+                UserDefaults.standard.set(true,forKey:"TaskSecretary.confirmWhenUnsure")
             }
             loadExperiencePreferences()
             let file=AppPaths.root.appendingPathComponent("actor.json")
@@ -272,7 +273,7 @@ final class TaskService: ObservableObject {
             processingStage="正在校验操作与日期"
             command=try ConversationRules.cleanCreation(ConversationRules.scopeQuery(ConversationRules.refine(command,input:input),input:input,groups:groups),input:input,groups:groups)
             command=try TaskCommand.decode(JSONEncoder().encode(command),expectedId:id,tasks:snapshot)
-            if preferences.confirmAll { command.requiresConfirmation=true }
+            command.requiresConfirmation=preferences.confirmAll || ConversationRules.needsConfirmation(command,input:input,tasks:snapshot,numbers:taskNumbers)
             record!.command=command
             if command.intent=="clarify" { throw AppFailure.message("还不能确定要处理哪件事，请补充具体任务名称或操作。") }
             if command.intent=="query_tasks" {
@@ -478,7 +479,7 @@ final class TaskService: ObservableObject {
         if input.hasPrefix("手动新增任务：") || input.hasPrefix("手动新增任务:") {
             let title=String(input.dropFirst(7)).trimmingCharacters(in:.whitespacesAndNewlines)
             guard !title.isEmpty else{throw AppFailure.message("请提供任务标题。")}
-            return command("create_task",patch:["title":.text(title),"groupId":.text("inbox")],confirm:true)
+            return command("create_task",patch:["title":.text(title),"groupId":.text("inbox")])
         }
         if let groupCommand=try GroupConversation.command(input,id:id,groups:groups) {return groupCommand}
         if ["查看分组","查询分组","有哪些分组","几个分组","列出分组"].contains(where:input.contains) {return command("query_groups")}
@@ -501,14 +502,14 @@ final class TaskService: ObservableObject {
                 guard let group=TaskGroup.named(part) else{throw AppFailure.message("分组名称无效。")}
                 return command("move_task",task:task.id,patch:["groupId":.text(group.rawValue)])
             }
-            if input.contains("待测试") || input.contains("待验收") {return command("update_task",task:task.id,patch:["status":.text("waiting")],date:DateSuggestion.explicitDateText(in:input),confirm:DateSuggestion.explicitDateText(in:input) != nil)}
-            if ["标记完成","已完成","完成了"].contains(where:input.contains),DateSuggestion.explicitDateText(in:input)==nil,!["明天","下周","之前","计划","准备"].contains(where:input.contains) {return command("complete_task",task:task.id,confirm:true)}
-            if input.contains("删除") {return command("delete_task",task:task.id,confirm:true)}
+            if input.contains("待测试") || input.contains("待验收") {return command("update_task",task:task.id,patch:["status":.text("waiting")],date:DateSuggestion.explicitDateText(in:input))}
+            if ["标记完成","已完成","完成了"].contains(where:input.contains),DateSuggestion.explicitDateText(in:input)==nil,!["明天","下周","之前","计划","准备"].contains(where:input.contains) {return command("complete_task",task:task.id)}
+            if input.contains("删除") {return command("delete_task",task:task.id)}
             if let range=input.range(of:#"进度\s*(10|20|30|40|50|60|70|80|90|100)\s*%?$"#,options:.regularExpression) {
                 let value=Int(input[range].filter(\.isNumber))!
-                return command("update_task",task:task.id,patch:["progress":.number(value)],confirm:true)
+                return command("update_task",task:task.id,patch:["progress":.number(value)])
             }
-            if ["重新打开","撤销完成","恢复待办"].contains(where:input.contains) {return command("reopen_task",task:task.id,confirm:true)}
+            if ["重新打开","撤销完成","恢复待办"].contains(where:input.contains) {return command("reopen_task",task:task.id)}
 
         }
         if ConversationRules.isQuery(input) {

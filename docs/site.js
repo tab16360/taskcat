@@ -17,7 +17,7 @@
     {n:3,title:'预约年度体检',meta:'生活',when:'明天 09:30',done:false},
     {n:5,title:'整理周会纪要发给团队',meta:'工作',when:'周五 10:00',done:false}
   ];
-  let pending=null,code=0,model='本地 Ollama';
+  let model='本地 Ollama';
   const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
   const wait=ms=>new Promise(r=>setTimeout(r,reduce?0:ms));
   function add(text,me=false){
@@ -54,32 +54,20 @@
     return {title,when:`${day} ${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`,group};
   }
   function reply(text){
-    const confirm=text.match(/^(确认|取消)\s*(\d+)$/),move=text.match(/任务\s*(\d+).*改到(.+)$/),done=text.match(/任务\s*(\d+)\s*(?:标记)?完成/);
-    if(confirm){
-      if(!pending||Number(confirm[2])!==pending.code)return '没有找到这条待确认的操作。';
-      const p=pending;pending=null;
-      if(confirm[1]==='取消')return '已取消，任务没有改动。';
-      if(p.kind==='add'){
-        const n=Math.max(...tasks.map(t=>t.n))+1;
-        tasks.push({n,title:p.item.title,meta:p.item.group,when:p.item.when,done:false});
-        return `已记下任务${n}\n\n${p.item.title}\n${p.item.when} · ${p.item.group}\n\n已同步到 Mac 和 iPhone 的提醒事项，到点会提醒你。`;
-      }
-      if(p.kind==='move'){p.task.when=p.when;return `已调整任务${p.task.n}\n\n${p.task.title}\n${p.when}`;}
-      p.task.done=true;return `已完成任务${p.task.n}\n\n${p.task.title}\n又少一件惦记的事。`;
-    }
+    const move=text.match(/任务\s*(\d+).*改到(.+)$/),done=text.match(/任务\s*(\d+)\s*(?:标记)?完成/);
     if(move||done){
       const n=Number((move||done)[1]),task=tasks.find(t=>t.n===n);
       if(!task)return `没有找到任务${n}，先发“这周还有什么”核对编号。`;
       if(done&&task.done)return `任务${n}已经完成了。`;
-      code+=1;
-      if(move){const when=move[2].replace(/[。！!]$/,'').trim()||'下周一';pending={code,kind:'move',task,when:when.includes('下周一')?'下周一 09:30':when};return `待确认 ${code}\n\n${task.title}\n改到 ${pending.when}\n\n回复「确认${code}」执行，或「取消${code}」。`;}
-      pending={code,kind:'done',task};return `待确认 ${code}\n\n标记完成：${task.title}\n\n回复「确认${code}」执行，或「取消${code}」。`;
+      if(move){const when=move[2].replace(/[。！!]$/,'').trim()||'下周一';task.when=when.includes('下周一')?'下周一 09:30':when;return `已调整任务${n}\n\n${task.title}\n${task.when}`;}
+      task.done=true;return `已完成任务${n}\n\n${task.title}\n又少一件惦记的事。`;
     }
-    // Dated commands always ask for a short confirmation first, as in the app.
+    // Clear requests apply at once, as in the app; it only asks when unsure.
     const item=capture(text);
     if(item){
-      code+=1;pending={code,kind:'add',item};
-      return `待确认 ${code}\n\n新增：${item.title}\n${item.when} · ${item.group}\n\n回复「确认${code}」记下。`;
+      const n=Math.max(...tasks.map(t=>t.n))+1;
+      tasks.push({n,title:item.title,meta:item.group,when:item.when,done:false});
+      return `已记下任务${n}\n\n${item.title}\n${item.when} · ${item.group}\n\n已同步到 Mac 和 iPhone 的提醒事项，到点会提醒你。`;
     }
     if(/模型/.test(text)){
       if(/切换|换成|改用/.test(text)){model=/云/.test(text)?'云端模型':'本地 Ollama';return `已切换到 ${model}。`;}
@@ -92,15 +80,9 @@
   async function send(text){
     text=text.trim();if(!text||busy)return;busy=true;add(text,true);input.value='';
     await wait(420);add(reply(text));busy=false;
-    // Offer the confirmation reply as the next suggestion so the flow is one click.
-    const confirmButton=document.getElementById('confirm-suggest');
-    if(pending){
-      const b=confirmButton||Object.assign(document.createElement('button'),{type:'button',id:'confirm-suggest'});
-      b.textContent=`确认${pending.code}`;b.dataset.say=`确认${pending.code}`;document.getElementById('suggest').prepend(b);
-    } else confirmButton?.remove();
   }
   form.addEventListener('submit',e=>{e.preventDefault();send(input.value);});
   document.getElementById('suggest').addEventListener('click',e=>{const b=e.target.closest('button');if(b)send(b.dataset.say);});
   // Open with one capture so the panel shows the main use before anyone types.
-  const first='明天下午三点交季度报告';add(first,true);add(reply(first));add('确认1',true);add(reply('确认1'));
+  const first='明天下午三点交季度报告';add(first,true);add(reply(first));
 })();

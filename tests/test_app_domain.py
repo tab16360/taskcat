@@ -73,8 +73,10 @@ def test_bad_or_unrelated_changes_do_not_cross_boundary(domain_cli,tmp_path,c):
  {'intent':'delete_task','patch':{}},{'intent':'complete_task','patch':{}},
  {'intent':'reopen_task','patch':{}},{'patch':{'status':'done'}},
  {'patch':{'title':'新的打印模板'}},{'dateText':'下周五'}])
-def test_confirmation_cannot_be_bypassed_by_model(domain_cli,tmp_path,changes):
-    assert run(domain_cli,tmp_path,command(**changes))['requiresConfirmation'] is True
+def test_task_changes_follow_the_model_uncertainty_flag(domain_cli,tmp_path,changes):
+    # Whether to ask is decided later from the message itself (ConversationRules.needsConfirmation).
+    assert run(domain_cli,tmp_path,command(**changes))['requiresConfirmation'] is False
+    assert run(domain_cli,tmp_path,command(**changes,requiresConfirmation=True))['requiresConfirmation'] is True
 
 @pytest.mark.parametrize('url,valid,endpoint',[
  ('https://example.test/v1',True,'https://example.test/v1/chat/completions'),
@@ -123,10 +125,9 @@ def test_group_alias_normalizes_before_query_and_write(domain_cli,tmp_path):
 
 
 @pytest.mark.parametrize('top',['周日晚上8:00',None])
-def test_local_model_nested_date_canonicalizes_and_still_requires_confirmation(domain_cli,tmp_path,top):
+def test_local_model_nested_date_canonicalizes(domain_cli,tmp_path,top):
     result=run(domain_cli,tmp_path,command(patch={'dateText':'周日晚上8:00'},dateText=top))
     assert result['dateText']=='周日晚上8:00' and result['patch']=={}
-    assert result['requiresConfirmation'] is True
 
 
 @pytest.mark.parametrize('patch,top',[
@@ -156,10 +157,10 @@ def test_inbox_and_permanent_deletion_cannot_be_bypassed_by_model(domain_cli,tmp
     run(domain_cli,tmp_path,command(intent=intent,taskId=None if 'group' in intent else TASK,patch=patch),expected=2)
 
 @pytest.mark.parametrize('progress,result',[(1,10),(24,20),(35,40),(87,90),(94,90),(95,100),(100,100)])
-def test_progress_uses_ten_point_steps_and_completion_confirmation(domain_cli,tmp_path,progress,result):
+def test_progress_uses_ten_point_steps_and_full_progress_completes(domain_cli,tmp_path,progress,result):
     c=run(domain_cli,tmp_path,command(patch={'progress':progress}))
     assert c['patch']['progress']==result
-    if result==100:assert c['patch']['status']=='done' and c['requiresConfirmation']
+    if result==100:assert c['patch']['status']=='done' and not c['requiresConfirmation']
 
 
 def test_unsaved_profile_origin_changes_cannot_reuse_old_credentials(domain_cli):

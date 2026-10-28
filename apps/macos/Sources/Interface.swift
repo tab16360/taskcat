@@ -707,8 +707,8 @@ struct SettingsView:View {
                 Button("测试连接"){Task{await service.testModel()}}.buttonStyle(ConsoleButton())
                 Text(service.modelTestNotice).font(.system(size:11)).foregroundStyle(service.modelTestNotice.hasPrefix("连接成功") ? palette.success : palette.muted).lineLimit(2)
             }.disabled(service.uiBusy)
-            switchRow("AI 修改任务前先让我确认",$service.preferences.confirmAll)
-            note("本地模型理解偶有偏差，建议开启。查询类请求不需要确认。")
+            switchRow("每次修改任务都先让我确认",$service.preferences.confirmAll)
+            note("默认只在拿不准时确认：没说清是哪件任务、日期说得含糊，或要改动分组。")
             note("Key 只保存在这台 Mac 的应用配置目录，不进入备份或同步。使用云端模型时，会发送你的输入、近期操作和最多 100 项相关任务的标题、状态与分组；不发送备注。不配置模型也可以手动管理任务。")
         }.padding(18).consoleCard()
     }

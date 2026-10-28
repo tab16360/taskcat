@@ -95,6 +95,11 @@ def rules_cli(tmp_path_factory):
   case "refine":
    let c=TaskCommand(operationId:"op",intent:"complete_task",taskId:"a",patch:["status":.text("done")],dateText:nil,requiresConfirmation:false)
    let refined=ConversationRules.refine(c,input:a[2]);print(refined.intent+":"+(refined.text("status") ?? "")+":"+(refined.dateText ?? "nil"))
+  case "needs":
+   var n=TaskNumbers();n.assign(tasks)
+   let target:String?=a[3]=="-" ? nil : a[3]
+   let c=TaskCommand(operationId:"op",intent:a[2],taskId:target,patch:a[2]=="create_task" ? ["title":.text("合成")] : a[2]=="delete_group" ? ["groupId":.text("wenshu")] : [:],dateText:a[5]=="-" ? nil : a[5],requiresConfirmation:a[6]=="model-unsure")
+   print(ConversationRules.needsConfirmation(c,input:a[4],tasks:tasks,numbers:n) ? "ask" : "apply")
   case "group":print(TaskGroup(rawValue:a[2]).map{$0.rawValue+"|"+$0.calendarTitle+"|"+$0.uuid} ?? "nil")
   case "defaults":print(TaskGroup.allCases.map(\.calendarTitle).joined(separator:","))
   default: fatalError()
@@ -274,3 +279,19 @@ def test_search_matches_title_notes_or_group(rules_cli,query,expected):assert ru
  ('2026-10-23T09:00:00Z','monday','2026-10-26T09:00:00Z'),     # today 17:00 -> next Monday 17:00
  ('none','monday','2026-10-26T01:00:00Z')])
 def test_postpone_keeps_time_of_day(rules_cli,due,mode,expected):assert run(rules_cli,'postpone',due,mode)==expected
+
+# Numbers follow task ids: a=1, b=2. Only uncertain requests ask the user to confirm.
+@pytest.mark.parametrize('intent,task,text,date,flag,expected',[
+ ('create_task','-','明天上午十点约牙医','明天上午十点','-','apply'),
+ ('create_task','-','买猫粮','-','-','apply'),
+ ('update_task','a','任务1改到明天下午三点','明天下午三点','-','apply'),
+ ('complete_task','a','合成_任务_a 做完了','-','-','apply'),
+ ('delete_task','b','任务2删除','-','-','apply'),
+ ('update_task','a','那个改到明天下午三点','明天下午三点','-','ask'),
+ ('update_task','a','任务2改到明天','明天','-','ask'),
+ ('create_task','-','下个月找时间约牙医','下个月','-','ask'),
+ ('create_task','-','月底约牙医','月底','-','ask'),
+ ('create_task','-','约牙医','-','model-unsure','ask'),
+ ('delete_group','-','删除分组wenshu','-','-','ask')])
+def test_confirmation_only_when_uncertain(rules_cli,intent,task,text,date,flag,expected):
+    assert run(rules_cli,'needs',intent,task,text,date,flag)==expected
