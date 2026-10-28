@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>记事喵 TaskCat：一句话，安排好每件事</title>
-  <meta name="description" content="住在 Mac 菜单栏的 AI 待办管家。⌥⌘T 一句话记下，每天打开先看今日提醒，微信里也能查和改。开源，Apache-2.0。">
+  <meta name="description" content="住在 Mac 菜单栏的 AI 待办管家。⌥⌘T 一句话记下，人在外面就发微信随手记，每天打开先看今日提醒。开源，Apache-2.0。">
   <meta property="og:title" content="记事喵 TaskCat 1.0：一句话，安排好每件事">
   <meta property="og:description" content="Mac 菜单栏 AI 待办管家，微信里也能交代。开源，自选云端或本地模型。">
   <meta property="og:image" content="https://tab16360.github.io/taskcat/assets/screens/panel-light.png">
@@ -42,7 +42,7 @@
     <div class="hero-copy reveal">
       <p class="eyebrow">1.0 正式版 · 开源免费</p>
       <h1>一句话，<br>安排好每件事。</h1>
-      <p class="lead">住在 Mac 菜单栏的 AI 待办管家。想到就记，微信里也能交代。</p>
+      <p class="lead">住在 Mac 菜单栏的 AI 待办管家。电脑前按 ⌥⌘T，出门发一句微信，都能随手记。</p>
       <div class="actions">
         <a class="button" href="https://github.com/tab16360/taskcat/releases/latest/download/TaskCat-arm64.zip"><i class="ph ph-download-simple"></i>下载 macOS 版</a>
         <a class="button ghost" href="https://github.com/tab16360/taskcat"><i class="ph ph-github-logo"></i>查看源码</a>
@@ -70,8 +70,8 @@
         <p class="after">每天第一次打开，AI 先用两三句话告诉你：哪件逾期了，今天先做哪件。</p>
       </div>
       <div class="pain reveal">
-        <p class="before">人在外面，手边只有微信。想改个时间，只能等回到电脑前。</p>
-        <p class="after">在微信里问“这周还有什么”，回“任务3改到下周一”，Mac 上同步改好。</p>
+        <p class="before">人在外面想起一件事，只能先发给文件传输助手，回到电脑前再抄一遍。多半就忘了抄。</p>
+        <p class="after">直接发微信给记事喵：“明天下午三点交方案”。回一句“确认1”，任务就进了 Mac 和 iPhone 的提醒事项。</p>
       </div>
     </div>
   </section>
@@ -105,27 +105,22 @@
         <p>任何 OpenAI 兼容接口，或者本地 Ollama，数据不出本机。设置里一键测试连接。</p>
         <div class="model-row"><span><i class="ph ph-cloud"></i>云端</span><span><i class="ph ph-desktop"></i>本地 Ollama</span></div>
       </article>
-      <article class="tile tile-settings reveal">
-        <img src="assets/screens/settings.png" width="510" height="610" loading="lazy" alt="分栏设置页：外观、每日提醒、全局快捷键、菜单栏数量">
-        <div class="tile-text">
-          <h3>设置不再是一面墙</h3>
-          <p>通用、AI 模型、同步与备份、微信、更新，各归各位。新版本到了会弹窗提醒，点一下就装好。</p>
-        </div>
-      </article>
     </div>
   </section>
 
   <section class="wechat" id="wechat" aria-labelledby="wechat-title">
     <div class="wrap wechat-grid">
       <div class="wechat-copy reveal">
-        <h2 id="wechat-title">微信里也能交代。</h2>
-        <p>记事喵可以接入你的微信。查待办、改时间、标完成，和菜单栏共用同一份任务、同一套编号。会改动任务的指令先发确认，回复短编号才执行。</p>
+        <h2 id="wechat-title">微信随手记。</h2>
+        <p>出门在外，想到什么就给记事喵发一句话。它理解时间和分组，先回你一条核对，回复“确认1”就记下：Mac 菜单栏和 iPhone 提醒事项同时出现，到点照常提醒。</p>
+        <p>带时间的指令都会先让你核对一眼，免得听错日期。查这周安排、改时间、标完成，也都在同一个对话里。</p>
         <p class="note">右边是浏览器里的本地演示，不连接微信或模型。真实使用需要 Mac 上的记事喵在运行。</p>
       </div>
       <div class="phone reveal" aria-label="微信对话演示">
         <div class="phone-head"><img src="assets/taskcat.png" width="28" height="28" alt=""><div><strong>记事喵</strong><small>微信对话演示</small></div></div>
         <div class="thread" id="thread" role="log" aria-live="polite"></div>
         <div class="suggest" id="suggest">
+          <button type="button" data-say="周四上午十点约牙医">周四上午十点约牙医</button>
           <button type="button" data-say="这周还有什么要做的？">这周还有什么</button>
           <button type="button" data-say="任务3改到下周一">任务3改到下周一</button>
           <button type="button" data-say="任务1标记完成">任务1标记完成</button>
@@ -133,7 +128,7 @@
         </div>
         <form class="compose" id="compose">
           <label class="sr-only" for="say">给记事喵发消息</label>
-          <input id="say" autocomplete="off" maxlength="80" placeholder="试试：任务2标记完成">
+          <input id="say" autocomplete="off" maxlength="80" placeholder="试试：后天晚上八点给妈妈打电话">
           <button type="submit" aria-label="发送"><i class="ph ph-paper-plane-tilt"></i></button>
         </form>
       </div>
