@@ -46,7 +46,7 @@
 
 出门在外，想到什么就给记事喵发一句：“周四上午十点约牙医。”它理解时间和分组，回你一条核对；回复“确认1”，Mac 菜单栏和 iPhone 提醒事项同时出现，到点照常提醒。带时间的指令都会先核对一眼，免得听错日期。查这周安排、改时间、标完成也在同一个对话里。
 
-> **目前状态**：微信入口现在需要按[桥接说明](#微信桥接说明)自行配置 Python 环境和第三方 SDK，面向开发者。扫码即用的内置版本正在开发，完成后在设置里扫码即可连接，不再需要额外安装。微信入口通过可选的桥接接入，和菜单栏共用同一份任务、同一套编号。
+在设置的“微信”里点“连接微信”，用手机微信扫码即可，不需要另外安装任何东西；语音消息同样能记。
 
 ### 每天第一次打开，先看到一段“今日提醒”
 
@@ -99,10 +99,9 @@ bash scripts/install-app.sh    # 安装到“应用程序”并打开
 构建脚本会优先使用本机专用钥匙串 `~/Library/Keychains/taskcat-signing.keychain-db` 里的自签名证书；没有时回退为临时签名（每次更新后 macOS 会重新询问提醒事项权限）。设置 `TASKCAT_SIGNING_IDENTITY` 可改用 Developer ID。
 
 ```text
-apps/macos/Sources/     SwiftUI 界面、任务服务、更新、同步
+apps/macos/Sources/     SwiftUI 界面、任务服务、微信连接、更新、同步
 apps/macos/Resources/   Info.plist、模型指令与命令 Schema、更新脚本
 poc/metadata-journal/   不可变操作日志与冲突检测
-services/wechat-bridge/ 可选的微信桥接（不含第三方 SDK）
 scripts/                构建、打包、安装、界面预览
 tests/                  pytest 驱动的真实 Swift 行为测试
 docs/                   官网（GitHub Pages）
@@ -116,11 +115,11 @@ python3 -m venv .venv
 .venv/bin/python -m pytest tests -q
 ```
 
-测试会编译真实的 Swift 代码并用合成数据运行，不访问你的提醒事项、钥匙串或微信。未安装可选微信 SDK 时，相关的 3 项自动跳过。
+测试会编译真实的 Swift 代码并用合成数据运行，不访问你的提醒事项、钥匙串或微信；微信部分用本地模拟服务器验证登录、收发与去重。
 
-## 微信桥接说明
+## 微信连接说明
 
-桥接代码在 [`services/wechat-bridge/`](services/wechat-bridge/README.md)，适配第三方 SDK `minibear2021/wechat_clawbot_sdk`（固定提交 `0d1c8b4e`）。本仓库与安装包**不包含该 SDK**，其许可需自行确认。同一个微信绑定请只在一台 Mac 上运行。
+微信连接直接内置在 App 里（`WeChatBridge.swift` 等），按腾讯官方插件 [openclaw-weixin](https://www.npmjs.com/package/@tencent-weixin/openclaw-weixin)（MIT）公开的 iLink 协议用 Swift 实现，不依赖 Python 或第三方 SDK。收到的消息先写入本机持久收件箱，再交给任务服务处理；同一条消息不会被执行两次，回复结果不确定时会暂停而不是重发。登录信息只保存在本机 `~/.tasksecretary/wechat/`（仅当前用户可读写）。同一个微信请只连接一台 Mac。
 
 ## 已知边界
 
@@ -137,4 +136,4 @@ python3 -m venv .venv
 
 ## 许可证
 
-[Apache License 2.0](LICENSE)。第三方微信 SDK 不在此许可范围内。
+[Apache License 2.0](LICENSE)。微信协议实现参考了腾讯 openclaw-weixin（MIT），见 [NOTICE](NOTICE)。

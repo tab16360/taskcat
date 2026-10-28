@@ -119,7 +119,8 @@ final class WeChatBridge:@unchecked Sendable {
                 try await Task.sleep(nanoseconds:failures>=3 ? options.retryDelay*6 : options.retryDelay)
             case .batch(_,let next):
                 failures=0
-                try inbox.commitBatch(account.accountID,messages:messages,cursor:next)
+                // An empty poll with an unchanged cursor has nothing to make durable; skip the fsync.
+                if !messages.isEmpty || next != cursor {try inbox.commitBatch(account.accountID,messages:messages,cursor:next)}
                 await publish("connected")
             }
         }

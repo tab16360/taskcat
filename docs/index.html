@@ -114,7 +114,7 @@
         <h2 id="wechat-title">微信随手记。</h2>
         <p>出门在外，想到什么就给记事喵发一句话。它理解时间和分组，先回你一条核对，回复“确认1”就记下：Mac 菜单栏和 iPhone 提醒事项同时出现，到点照常提醒。</p>
         <p>带时间的指令都会先让你核对一眼，免得听错日期。查这周安排、改时间、标完成，也都在同一个对话里。</p>
-        <p class="note"><strong>目前状态：</strong>微信入口现在需要按文档自行配置运行环境（面向开发者），扫码即用的内置版本正在开发。右边是浏览器里的本地演示，不连接微信或模型；真实使用需要 Mac 上的记事喵在运行。</p>
+        <p class="note">在设置里点“连接微信”，手机扫码即可，不需要另外安装。右边是浏览器里的本地演示，不连接微信或模型；真实使用需要 Mac 上的记事喵在运行。</p>
       </div>
       <div class="phone reveal" aria-label="微信对话演示">
         <div class="phone-head"><img src="assets/taskcat.png" width="28" height="28" alt=""><div><strong>记事喵</strong><small>微信对话演示</small></div></div>
@@ -172,7 +172,7 @@ cd taskcat && bash scripts/build-app.sh</code></pre>
     <div class="faq">
       <details class="reveal"><summary>免费吗？要付什么钱？</summary><p>记事喵免费、开源。云端模型按你选的服务计费；本地模型不花钱，需要自己运行 Ollama 等服务。</p></details>
       <details class="reveal"><summary>为什么首次打开会被系统拦下？</summary><p>应用用固定的自签名证书签名，没有经过 Apple 公证。核对来源后在“隐私与安全性”里点“仍要打开”即可，不需要关闭任何安全功能。之后的更新会保留提醒事项授权。</p></details>
-      <details class="reveal"><summary>微信入口现在怎么用？</summary><p>目前需要按仓库里的<a href="https://github.com/tab16360/taskcat/blob/main/services/wechat-bridge/README.md">桥接说明</a>自行准备 Python 环境和第三方 SDK，适合开发者。我们正在把微信连接直接做进 App，完成后在设置里扫码即可使用，不再需要额外安装。菜单栏部分不依赖微信，可以单独使用。</p></details>
+      <details class="reveal"><summary>微信怎么连接？要装别的东西吗？</summary><p>不用。在设置的“微信”里点“连接微信”，用手机微信扫码确认就好。连接按腾讯官方开放的 iLink 协议实现，登录信息只存在你这台 Mac 上。同一个微信请只连接一台 Mac。</p></details>
       <details class="reveal"><summary>Mac 不常开，还能用吗？</summary><p>可以。任务同步到 iPhone 的提醒事项后，手机上照样能看、能改、能收到通知。只有 AI 理解、今日提醒和微信入口需要 Mac 上的记事喵在运行。</p></details>
       <details class="reveal"><summary>支持哪些 Mac？有 iPhone App 吗？</summary><p>macOS 14 以上，Apple Silicon 已实测，Intel 尚未验收。没有独立的 iPhone App，手机端用系统提醒事项。</p></details>
       <details class="reveal"><summary>AI 理解错了怎么办？</summary><p>会改动任务的指令默认先给你确认，核对后再执行。点完成后几秒内也能撤销，删除的任务进回收站，可以恢复。</p></details>

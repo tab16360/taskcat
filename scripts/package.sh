@@ -13,4 +13,4 @@ ditto -c -k --sequesterRsrc --keepParent "$package_stage/记事喵.app" "dist/Ta
   cd dist
   shasum -a 256 "TaskCat-$package_arch.zip" > "TaskCat-$package_arch.zip.sha256"
 )
-printf 'Packaged core app only; optional WeChat SDK and local data excluded.\n'
+printf 'Packaged app only; local data and WeChat login excluded.\n'
