@@ -71,6 +71,11 @@ struct HousekeeperView:View {
         }
     }
     private var taskScope:String {"\(service.taskLens.rawValue)|\(service.selectedGroup)|\(service.showTrash)|\(service.showCompleted)"}
+    private var rowsSignature:Int {
+        var h=Hasher()
+        for t in service.visibleTasks {h.combine(t.id);h.combine(t.title);h.combine(t.dueAt);h.combine(t.status);h.combine(t.progress);h.combine(t.group);h.combine(t.completed);h.combine(t.softDeleted)}
+        return h.finalize()
+    }
     private var displayedTasks:[ManagedTask] {TaskBoard.page(service.visibleTasks,expanded:service.tasksExpanded)}
     private var allTasksButton:some View {
         Button {
@@ -388,6 +393,7 @@ struct HousekeeperView:View {
                 }.font(.system(size:10)).foregroundStyle(palette.muted)
             }
             // Ticks each minute so due buckets and relative labels move on time (e.g. today → overdue).
+            // The content closure alone does not re-run when only a task's fields change, so key the view on what the rows show.
             TimelineView(.everyMinute){context in LazyVStack(alignment:.leading,spacing:8) {
                 if service.visibleTasks.isEmpty {
                     VStack(spacing:10) {
@@ -406,6 +412,7 @@ struct HousekeeperView:View {
                     ForEach(displayedTasks){task in TaskRow(task:task,service:service,now:now)}
                 }
             }.animation(reduceMotion ? nil : .spring(response:0.32,dampingFraction:0.88),value:service.visibleTasks.map(\.id))}
+            .id(rowsSignature)
         }
     }
     private var onboarding:some View {
@@ -809,7 +816,7 @@ struct TaskEditorView:View {
     private var palette:ThemePalette {ThemePalette(theme:appearance.selected)}
     var body:some View {
         GlassFamily { VStack(alignment:.leading,spacing:16) {
-            HStack {Text("编辑任务").font(.system(size:17,weight:.semibold));Spacer();Button("取消"){service.editorPresented=false}.buttonStyle(ConsoleButton());Button("保存"){Task{await service.saveEdit()}}.buttonStyle(ConsoleButton(prominent:true)).disabled(service.uiBusy)}
+            HStack {Text("编辑任务").font(.system(size:17,weight:.semibold));Spacer();Button("取消"){service.editorPresented=false}.buttonStyle(ConsoleButton());if service.uiBusy {ProgressView().controlSize(.small);Text("保存中…").font(.system(size:12)).foregroundStyle(palette.muted)};Button("保存"){Task{await service.saveEdit()}}.buttonStyle(ConsoleButton(prominent:true)).disabled(service.uiBusy)}
             ScrollView {
                 VStack(alignment:.leading,spacing:15) {
                     TextField("任务标题",text:$service.editTitle,axis:.vertical).font(.system(size:15)).lineLimit(1...3).textFieldStyle(.plain).padding(12).consoleCard(radius:10)
@@ -826,7 +833,7 @@ struct TaskEditorView:View {
                         Button("推迟到下周一"){service.editDue=TaskBoard.postponed(service.editHasDue ? service.editDue : nil,nextWeekday:2);service.editHasDue=true}.buttonStyle(ConsoleButton())
                     }
                     if let error=service.errorMessage {Text(error).font(.system(size:11)).foregroundStyle(palette.warning)}
-                }.font(.system(size:12)).padding(2)
+                }.font(.system(size:12)).padding(2).disabled(service.uiBusy)
             }
         }.padding(20)}
         .alert("进度已达 100%",isPresented:$service.progressCompletionPresented) {
