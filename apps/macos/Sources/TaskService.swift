@@ -158,8 +158,9 @@ final class TaskService: ObservableObject {
         busy=true;backgroundSyncing=background;defer{busy=false;backgroundSyncing=false}
         do { try await reload() } catch { errorMessage=error.localizedDescription }
     }
-    func reload() async throws {
-        await syncMetadata()
+    /// `sync:false` skips the iCloud metadata exchange; used right after our own write, where the 12 s timer pushes it anyway.
+    func reload(sync:Bool=true) async throws {
+        if sync {await syncMetadata()}
         try reminders.refreshGroups()
         let rows=try await reminders.fetch()
         let projection=try journal.project()
@@ -396,7 +397,11 @@ final class TaskService: ObservableObject {
             try await reminders.apply(record)
             _=try journal.append(op)
         }
-        try await reload()
+        try await reload(sync:false)
+        if let due=record.dueAt,let got=tasks.first(where:{$0.id==targetID}),got.dueAt.map({abs($0.timeIntervalSince(due))>60}) ?? true {
+            // EventKit can hand back a cached copy right after a save; re-read once so the list shows the new time.
+            reminders.refreshStore();try? await Task.sleep(nanoseconds:300_000_000);try await reload(sync:false)
+        }
         guard tasks.contains(where:{$0.id==targetID}) else { throw AppFailure.message("保存后未读到任务，暂不确认成功。") }
         record.phase="applied"
         let saved=tasks.first{$0.id==targetID}!

@@ -820,6 +820,11 @@ struct TaskEditorView:View {
                     if service.editHasProgress {HStack{Slider(value:$service.editProgress,in:10...100,step:10);Text("\(Int(service.editProgress))%").monospacedDigit().frame(width:40)}}
                     Toggle("设置截止时间",isOn:$service.editHasDue)
                     if service.editHasDue {DatePicker("截止时间",selection:$service.editDue)}
+                    HStack(spacing:8) {
+                        Text("快捷推迟").foregroundStyle(palette.muted)
+                        Button("推迟一天"){service.editDue=TaskBoard.postponed(service.editHasDue ? service.editDue : nil);service.editHasDue=true}.buttonStyle(ConsoleButton())
+                        Button("推迟到下周一"){service.editDue=TaskBoard.postponed(service.editHasDue ? service.editDue : nil,nextWeekday:2);service.editHasDue=true}.buttonStyle(ConsoleButton())
+                    }
                     if let error=service.errorMessage {Text(error).font(.system(size:11)).foregroundStyle(palette.warning)}
                 }.font(.system(size:12)).padding(2)
             }

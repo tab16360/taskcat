@@ -177,6 +177,7 @@ final class RemindersStore {
         calendars=result
     }
 
+    func refreshStore() {eventStore.refreshSourcesIfNecessary()}
     func fetch() async throws -> [EKReminder] {
         guard !calendars.isEmpty else { return [] }
         let predicate=eventStore.predicateForReminders(in:Array(calendars.values))
