@@ -829,7 +829,11 @@ struct TaskEditorView:View {
                     if service.editHasDue {DatePicker("截止时间",selection:$service.editDue)}
                     HStack(spacing:8) {
                         Text("快捷推迟").foregroundStyle(palette.muted)
-                        Button("推迟一天"){service.editDue=TaskBoard.postponed(service.editHasDue ? service.editDue : nil);service.editHasDue=true}.buttonStyle(ConsoleButton())
+                        Button("推迟一天"){
+                            // Repeated clicks stack: each adds a day to the date shown; with no due date it starts from tomorrow 09:00.
+                            service.editDue=service.editHasDue ? (Calendar.current.date(byAdding:.day,value:1,to:service.editDue) ?? service.editDue) : TaskBoard.postponed(nil)
+                            service.editHasDue=true
+                        }.buttonStyle(ConsoleButton())
                         Button("推迟到下周一"){service.editDue=TaskBoard.postponed(service.editHasDue ? service.editDue : nil,nextWeekday:2);service.editHasDue=true}.buttonStyle(ConsoleButton())
                     }
                     if let error=service.errorMessage {Text(error).font(.system(size:11)).foregroundStyle(palette.warning)}
